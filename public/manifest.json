@@ -1,0 +1,22 @@
+{
+  "name": "施設空き状況ナビ",
+  "short_name": "施設ナビ",
+  "description": "放課後等デイサービス・児童発達支援の空き状況確認アプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFDF9",
+  "theme_color": "#2C9381",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
