@@ -1,18 +1,23 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
+// ★ Supabaseクライアントの参照元を @/utils/supabase/client に統一
+import { createClient } from '@/utils/supabase/client';
 import { Facility, Schedule } from '@/types';
 import { 
   Search, MapPin, Phone, Clock, Car, Calendar, 
   Bookmark, Paperclip, Tag, LayoutGrid, List, ArrowUpDown, ChevronRight, MessageSquare, Lock, RotateCcw 
 } from 'lucide-react';
 import Link from 'next/link';
+import { User } from '@supabase/supabase-js';
 
 export default function Home() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ログインユーザーの状態を保持
+  const [user, setUser] = useState<User | null>(null);
 
   // フィルター用ステート
   const [selectedService, setSelectedService] = useState<string>('all');
@@ -25,9 +30,28 @@ export default function Home() {
 
   const days = ['月', '火', '水', '木', '金', '土'];
 
+  // ★ Supabaseクライアント初期化
+  const supabase = createClient();
+
   useEffect(() => {
     fetchData();
+    checkUser();
   }, []);
+
+  // ログイン状態の確認とリアルタイム監視
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUser(user);
+
+    // ログイン状態の変更を監視
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -46,10 +70,8 @@ export default function Home() {
     setSearchKeyword('');
   };
 
-  // フィルターが適用されているかどうかの判定
   const isFiltered = selectedService !== 'all' || selectedDay !== 'all' || searchKeyword.trim() !== '';
 
-  // 施設ごとの「◯」「▲」の合計数を計算するヘルパー関数
   const getAvailabilityCount = (facilityId: number) => {
     return schedules
       .filter((s) => s.facility_id === facilityId)
@@ -60,15 +82,12 @@ export default function Home() {
       }, 0);
   };
 
-  // 絞り込み & 並び替えロジック
   const processedFacilities = useMemo(() => {
     const filtered = facilities.filter((facility) => {
-      // 1. サービス種別フィルター
       if (selectedService !== 'all' && !facility.offered_services?.includes(selectedService)) {
         return false;
       }
 
-      // 2. フリーワード検索（施設名・住所）
       if (searchKeyword.trim() !== '') {
         const kw = searchKeyword.toLowerCase();
         const matchName = facility.name?.toLowerCase().includes(kw);
@@ -76,7 +95,6 @@ export default function Home() {
         if (!matchName && !matchAddress) return false;
       }
 
-      // 3. 曜日×サービス種別の動的空き状況フィルター (◯ or ▲)
       if (selectedDay !== 'all') {
         const hasAvailable = schedules.some((s) => {
           if (s.facility_id !== facility.id) return false;
@@ -90,7 +108,6 @@ export default function Home() {
       return true;
     });
 
-    // ソート処理
     return filtered.sort((a, b) => {
       if (sortBy === 'availability') {
         const countA = getAvailabilityCount(a.id);
@@ -116,7 +133,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F3ECE0] text-gray-800 p-3 sm:p-8 font-sans relative overflow-x-hidden">
-      {/* 背景の方眼紙モチーフ */}
       <div 
         className="absolute inset-0 opacity-15 pointer-events-none z-0" 
         style={{ 
@@ -136,7 +152,6 @@ export default function Home() {
           </div>
 
           <div className="sm:pl-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            {/* スマホで中央寄り＆最大化、PCで左寄りのロゴエリア */}
             <div className="w-full sm:w-auto flex justify-center items-center py-1 sm:py-0">
               <img 
                 src="/kakehashi_file_wordmark_logo.svg" 
@@ -145,8 +160,16 @@ export default function Home() {
               />
             </div>
 
-            {/* マイページ ＆ 事業者画面（管理画面）ボタン */}
-            <div className="flex items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
+            {/* ボタンエリア */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
+              <Link
+                href="/messages"
+                className="flex-1 sm:flex-none px-3 py-2 sm:px-4 sm:py-2 bg-white hover:bg-[#FFF0F3] text-[#D96B85] border-2 border-[#F8C3CE] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                メッセージ
+              </Link>
+
               <Link
                 href="/mypage"
                 className="flex-1 sm:flex-none px-3 py-2 sm:px-4 sm:py-2 bg-[#FFF0F3] hover:bg-[#FFE4E8] text-[#D96B85] border-2 border-[#F8C3CE] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
@@ -155,20 +178,29 @@ export default function Home() {
                 マイページ
               </Link>
 
-              <Link
-                href="/admin"
-                className="flex-1 sm:flex-none px-3 py-2 sm:px-4 sm:py-2 bg-[#EAF7F4] hover:bg-[#DBF0EB] text-[#2C9381] border-2 border-[#A8DDD3] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                事業者画面
-              </Link>
+              {user ? (
+                <Link
+                  href="/admin"
+                  className="flex-1 sm:flex-none px-3 py-2 sm:px-4 sm:py-2 bg-[#EAF7F4] hover:bg-[#DBF0EB] text-[#2C9381] border-2 border-[#A8DDD3] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  事業者画面
+                </Link>
+              ) : (
+                <Link
+                  href="/login"
+                  className="flex-1 sm:flex-none px-3 py-2 sm:px-4 sm:py-2 bg-white hover:bg-gray-50 text-gray-600 border-2 border-[#D8CEBF] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shrink-0 shadow-sm"
+                >
+                  <Lock className="w-3.5 h-3.5 text-gray-400" />
+                  事業者ログイン
+                </Link>
+              )}
             </div>
           </div>
         </header>
 
         {/* --- 絞り込み検索エリア --- */}
         <div className="relative pt-4 mt-6">
-          {/* 付箋タブ */}
           <div className="absolute -top-3 left-4 z-20 bg-[#D96B85] text-white text-[11px] font-black px-4 py-1.5 rounded-t-xl shadow-sm flex items-center gap-1.5 border-t-2 border-x-2 border-[#C0546E]">
             <Tag className="w-3 h-3" />
             条件検索
@@ -181,7 +213,6 @@ export default function Home() {
                 <h2 className="text-xs sm:text-sm font-black text-gray-800">絞り込み条件を入力</h2>
               </div>
 
-              {/* リセットボタン */}
               <button
                 onClick={handleReset}
                 disabled={!isFiltered}
@@ -240,7 +271,6 @@ export default function Home() {
 
         {/* --- 検索結果件数 & ソート & 表示切替ツールバー --- */}
         <div className="space-y-2">
-          {/* 検索結果ガイド */}
           <div className="flex items-center justify-between px-1">
             <p className="text-xs font-black text-gray-700">
               検索結果: <span className="text-base text-[#D96B85] font-black">{processedFacilities.length}</span> 件
@@ -313,9 +343,6 @@ export default function Home() {
             )}
           </div>
         ) : viewMode === 'grid' ? (
-          /* ========================================================
-             1. 画像付きカード表示 (Grid View)
-             ======================================================== */
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {processedFacilities.map((facility) => (
               <div
@@ -390,7 +417,6 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* 週間空き状況シート */}
                     <div className="pt-1">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-1.5">
@@ -469,16 +495,12 @@ export default function Home() {
             ))}
           </div>
         ) : (
-          /* ========================================================
-             2. コンパクトリスト表示 (List View)
-             ======================================================== */
           <div className="space-y-3">
             {processedFacilities.map((facility) => (
               <div
                 key={facility.id}
                 className="bg-white rounded-2xl border-2 border-[#D8CEBF] p-3.5 sm:p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-3"
               >
-                {/* 施設基本情報 */}
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {facility.offered_services?.includes('after_school') && (
@@ -519,7 +541,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 週間空き状況 */}
                 <div className="bg-[#FFFEEF] px-2.5 py-1.5 rounded-xl border-2 border-[#E5DDD0] shrink-0 w-full md:w-auto">
                   <div className="grid grid-cols-6 gap-1 text-center w-full">
                     {days.map((day) => {
@@ -559,7 +580,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* アクションボタン */}
                 <div className="flex items-center gap-2 shrink-0 pt-1 md:pt-0">
                   <a
                     href={facility.phone_number ? `tel:${facility.phone_number}` : `/facility/${facility.id}`}

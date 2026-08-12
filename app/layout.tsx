@@ -3,7 +3,7 @@ import './globals.css'; // 既存のスタイル読み込み
 
 // 1. アプリ情報・PWA（ホーム画面追加時）の設定
 export const metadata: Metadata = {
-  title: '施設空き状況ナビ',
+  title: 'カケハシファイル',
   description: '放課後等デイサービス・児童発達支援の空き状況確認アプリ',
   manifest: '/manifest.json', // 1で作った設定ファイルを読み込む
   appleWebApp: {

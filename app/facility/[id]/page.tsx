@@ -1,19 +1,26 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, MapPin, Phone, Clock, Bus, Calendar, 
-  CheckCircle2, Heart, Send, Building2 
+  Heart, Send, Baby 
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { isLocalBookmarked, toggleLocalBookmark, addLocalInquiry } from '@/lib/storage';
+import { createClient } from '@/utils/supabase/client';
+import { isLocalBookmarked, toggleLocalBookmark } from '@/lib/storage';
 import { Facility, Schedule } from '@/types';
 
-export default function FacilityDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const facilityId = Number(resolvedParams.id);
+interface ChildInfo {
+  name: string;
+  age_grade: string;
+  beneficiary_number?: string;
+  available_services?: string[];
+}
 
+export default function FacilityDetailPage({ params }: { params: { id: string } | Promise<{ id: string }> }) {
+  const router = useRouter();
+  const [facilityId, setFacilityId] = useState<number | null>(null);
   const [facility, setFacility] = useState<Facility | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,75 +29,168 @@ export default function FacilityDetailPage({ params }: { params: Promise<{ id: s
   // フォーム用ステート
   const [applicantName, setApplicantName] = useState('');
   const [childAge, setChildAge] = useState('');
+  const [childName, setChildName] = useState('');
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [preferredDate, setPreferredDate] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
 
+  // マイページ連携用ステート
+  const [childrenList, setChildrenList] = useState<ChildInfo[]>([]);
+  const [selectedChildIndex, setSelectedChildIndex] = useState<number>(0);
+
+  // params の解決
   useEffect(() => {
-    fetchFacilityData();
-    setIsBookmarked(isLocalBookmarked(facilityId));
+    Promise.resolve(params).then((resolved) => {
+      const id = Number(resolved.id);
+      setFacilityId(id);
+      setIsBookmarked(isLocalBookmarked(id));
+    });
+  }, [params]);
+
+  // facilityId 確定後にデータ取得
+  useEffect(() => {
+    if (facilityId !== null) {
+      fetchFacilityData(facilityId);
+      fetchUserProfile();
+    }
   }, [facilityId]);
 
-  const fetchFacilityData = async () => {
-    setLoading(true);
+  // マイページの登録情報を自動ロード
+  const fetchUserProfile = async () => {
+    try {
+      const supabaseClient = createClient();
+      
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user) return;
 
-    // 施設スペック情報取得
-    const { data: facilityData, error: facilityError } = await supabase
+      if (user.email) setEmail(user.email);
+
+      const { data: profile } = await supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profile) {
+        if (profile.parent_name) setApplicantName(profile.parent_name);
+        if (profile.phone_number) setPhoneNumber(profile.phone_number);
+
+        const children: ChildInfo[] = profile.children || [];
+        setChildrenList(children);
+
+        if (children.length > 0) {
+          setChildName(children[0].name || '');
+          setChildAge(children[0].age_grade || '');
+        }
+      }
+    } catch (e) {
+      console.error('プロフィール取得エラー:', e);
+    }
+  };
+
+  const handleSelectChild = (index: number) => {
+    setSelectedChildIndex(index);
+    const targetChild = childrenList[index];
+    if (targetChild) {
+      setChildName(targetChild.name || '');
+      setChildAge(targetChild.age_grade || '');
+    }
+  };
+
+  const fetchFacilityData = async (id: number) => {
+    setLoading(true);
+    const supabaseClient = createClient();
+
+    const { data: facilityData } = await supabaseClient
       .from('facilities')
       .select('*')
-      .eq('id', facilityId)
+      .eq('id', id)
       .single();
 
-    if (!facilityError && facilityData) {
+    if (facilityData) {
       setFacility(facilityData);
     }
 
-    // 曜日別空き状況取得
-    const { data: scheduleData, error: scheduleError } = await supabase
+    const { data: scheduleData } = await supabaseClient
       .from('schedules')
       .select('*')
-      .eq('facility_id', facilityId);
+      .eq('facility_id', id);
 
-    if (!scheduleError && scheduleData) {
+    if (scheduleData) {
       setSchedules(scheduleData);
     }
 
     setLoading(false);
   };
 
-  // ブックマーク（お気に入り）トグル
   const handleToggleBookmark = () => {
+    if (facilityId === null) return;
     const updated = toggleLocalBookmark(facilityId);
     setIsBookmarked(updated.includes(facilityId));
   };
 
-  // 見学申込フォーム送信処理
-  const handleSubmitInquiry = (e: React.FormEvent) => {
+  // ★ お問い合わせ送信（Supabaseのconversations & messagesテーブルへ保存しチャット画面へ遷移）
+  const handleSubmitInquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!facility) return;
 
     setIsSubmitting(true);
+    const supabaseClient = createClient();
 
-    // LocalStorage (マイページ履歴) に保存
-    addLocalInquiry({
-      facility_id: facility.id,
-      facility_name: facility.name,
-      applicant_name: applicantName,
-      child_age: childAge,
-      email: email,
-      phone_number: phoneNumber,
-      preferred_date: preferredDate,
-      message: message,
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) {
+      alert('見学申込をするにはログインが必要です。');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const childInfoText = childName ? `${childName}（${childAge}）` : childAge;
+
+    // 1. 会話（conversation）の作成
+    const { data: conv, error: convError } = await supabaseClient
+      .from('conversations')
+      .insert({
+        facility_id: facility.id,
+        user_id: user.id,
+        applicant_name: applicantName,
+        child_info: childInfoText,
+        email: email,
+        phone_number: phoneNumber,
+        preferred_date: preferredDate,
+      })
+      .select()
+      .single();
+
+    if (convError) {
+      console.error('会話作成エラー:', convError);
+      alert('見学申込の送信に失敗しました。');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 2. 最初のメッセージ（お問い合わせ本文）の登録
+    const initialMessage = `【見学希望日時】\n${preferredDate || '指定なし'}\n\n【ご相談・お問い合わせ内容】\n${message || '特になし'}`;
+
+    const { error: msgError } = await supabaseClient.from('messages').insert({
+      conversation_id: conv.id,
+      sender_type: 'user',
+      sender_id: user.id,
+      content: initialMessage,
     });
 
+    if (msgError) {
+      console.error('メッセージ登録エラー:', msgError);
+    }
+
     setIsSubmitting(false);
-    setIsSubmitted(true);
+
+    // 3. メッセージチャット画面へ遷移
+    router.push(`/messages/${conv.id}`);
   };
 
-  if (loading) {
+  if (loading || facilityId === null) {
     return (
       <div className="min-h-screen bg-[#FFFDF9] flex items-center justify-center text-gray-400">
         施設情報を読み込んでいます...
@@ -178,7 +278,6 @@ export default function FacilityDetailPage({ params }: { params: Promise<{ id: s
                 )}
               </div>
 
-              {/* 施設概要 (description) の表示 */}
               {facility.description && (
                 <div className="bg-orange-50/60 p-3.5 rounded-xl border border-orange-100/80 text-xs text-gray-700 leading-relaxed mt-2">
                   <p className="font-bold text-orange-800 mb-1">💡 施設のアピールポイント</p>
@@ -188,7 +287,6 @@ export default function FacilityDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
 
-          {/* スペック基本情報 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-orange-50 text-xs text-gray-600">
             <div className="flex items-center gap-2">
               <Phone className="w-4 h-4 text-orange-400" />
@@ -238,120 +336,137 @@ export default function FacilityDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
 
-        {/* 見学申込・問い合わせフォーム */}
+        {/* お問い合わせフォーム */}
         <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm" id="inquiry-form">
           <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
             <Send className="w-5 h-5 text-orange-500" />
             Web簡単見学申込・お問い合わせ
           </h2>
-          <p className="text-xs text-gray-500 mb-6">送信内容は保護者マイページの「問合せ履歴」から確認できます。</p>
+          <p className="text-xs text-gray-500 mb-6">送信後は施設とのメッセージ画面でチャット形式でやり取りできます。</p>
 
-          {isSubmitted ? (
-            <div className="bg-green-50 border border-green-200 rounded-2xl p-8 text-center space-y-3">
-              <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
-              <h3 className="font-bold text-green-800 text-base">見学申込を送信しました！</h3>
-              <p className="text-xs text-gray-600">
-                施設担当者より連絡がありますので今しばらくお待ちください。<br />
-                送信内容はマイページからいつでもご確認いただけます。
-              </p>
-              <div className="pt-2 flex justify-center gap-3">
-                <Link
-                  href="/mypage"
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition shadow-sm"
-                >
-                  マイページで確認する
-                </Link>
-                <button
-                  onClick={() => setIsSubmitted(false)}
-                  className="text-xs text-gray-500 hover:underline px-3 py-2.5"
-                >
-                  続けて送信する
-                </button>
-              </div>
+          <form onSubmit={handleSubmitInquiry} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-bold text-gray-700 mb-1">保護者お名前 <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                required
+                value={applicantName}
+                onChange={(e) => setApplicantName(e.target.value)}
+                placeholder="例: 山田 太郎"
+                className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
+              />
             </div>
-          ) : (
-            <form onSubmit={handleSubmitInquiry} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            <div className="bg-orange-50/70 p-4 rounded-xl border border-orange-100 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-bold text-orange-800 flex items-center gap-1.5">
+                  <Baby className="w-4 h-4 text-orange-500" />
+                  お子様の情報（マイページ連携）
+                </span>
+              </div>
+
+              {childrenList.length > 1 && (
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="font-bold text-gray-600 text-[11px]">対象のお子様:</span>
+                  <div className="flex gap-1.5 overflow-x-auto">
+                    {childrenList.map((child, idx) => (
+                      <button
+                        type="button"
+                        key={idx}
+                        onClick={() => handleSelectChild(idx)}
+                        className={`text-[11px] px-3 py-1 rounded-lg font-bold transition border ${
+                          selectedChildIndex === idx
+                            ? 'bg-orange-500 text-white border-orange-500'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        {child.name || `お子様 ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">保護者お名前 <span className="text-red-500">*</span></label>
+                  <label className="block font-bold text-gray-700 mb-1">お子様のお名前</label>
                   <input
                     type="text"
-                    required
-                    value={applicantName}
-                    onChange={(e) => setApplicantName(e.target.value)}
-                    placeholder="例: 山田 太郎"
-                    className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
+                    value={childName}
+                    onChange={(e) => setChildName(e.target.value)}
+                    placeholder="例: 山田 花子"
+                    className="w-full p-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-orange-500"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">お子様の学年/年齢</label>
+                  <label className="block font-bold text-gray-700 mb-1">学年 / 年齢</label>
                   <input
                     type="text"
                     value={childAge}
                     onChange={(e) => setChildAge(e.target.value)}
-                    placeholder="例: 小学2年生 / 4歳"
-                    className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
+                    placeholder="例: 小学2年生 / 7歳"
+                    className="w-full p-2.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-orange-500"
                   />
                 </div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">メールアドレス <span className="text-red-500">*</span></label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="例: example@email.com"
-                    className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">電話番号 <span className="text-red-500">*</span></label>
-                  <input
-                    type="tel"
-                    required
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="例: 090-1234-5678"
-                    className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block font-bold text-gray-700 mb-1">見学希望日時（第1〜3希望など）</label>
+                <label className="block font-bold text-gray-700 mb-1">メールアドレス <span className="text-red-500">*</span></label>
                 <input
-                  type="text"
-                  value={preferredDate}
-                  onChange={(e) => setPreferredDate(e.target.value)}
-                  placeholder="例: 10/15(水) 15:00以降 希望"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="例: example@email.com"
                   className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
                 />
               </div>
-
               <div>
-                <label className="block font-bold text-gray-700 mb-1">ご相談・お問い合わせ内容</label>
-                <textarea
-                  rows={3}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="例: 送迎エリアについて詳しく知りたいです。"
-                  className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500 resize-none"
+                <label className="block font-bold text-gray-700 mb-1">電話番号 <span className="text-red-500">*</span></label>
+                <input
+                  type="tel"
+                  required
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="例: 090-1234-5678"
+                  className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
                 />
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-              >
-                <Send className="w-4 h-4" />
-                {isSubmitting ? '送信中...' : 'この内容で見学申し込みをする'}
-              </button>
-            </form>
-          )}
+            <div>
+              <label className="block font-bold text-gray-700 mb-1">見学希望日時（第1〜3希望など）</label>
+              <input
+                type="text"
+                value={preferredDate}
+                onChange={(e) => setPreferredDate(e.target.value)}
+                placeholder="例: 10/15(水) 15:00以降 希望"
+                className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-gray-700 mb-1">ご相談・お問い合わせ内容</label>
+              <textarea
+                rows={3}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="例: 送迎エリアについて詳しく知りたいです。"
+                className="w-full p-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-500 resize-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+            >
+              <Send className="w-4 h-4" />
+              {isSubmitting ? '送信中...' : 'この内容で見学申し込み・チャットを開始'}
+            </button>
+          </form>
         </div>
       </main>
     </div>

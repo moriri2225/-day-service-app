@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation' // ★ useSearchParams を追加
 import { createClient } from '@/utils/supabase/client'
 import { Mail, Lock, Loader2, Heart } from 'lucide-react'
 
@@ -13,7 +13,11 @@ export default function LoginPage() {
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
 
   const router = useRouter()
+  const searchParams = useSearchParams() // ★ クエリパラメータを取得
   const supabase = createClient()
+
+  // URLから ?redirectTo=/xxx を取得（指定がなければ null）
+  const redirectTo = searchParams.get('redirectTo')
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,18 +43,19 @@ export default function LoginPage() {
           if (signInError) throw signInError
         }
 
-        // 3. プロフィール初期登録画面へリダイレクト
-        router.push('/register/profile')
+        // 3. プロフィール初期登録画面（または指定されたページ）へリダイレクト
+        router.push(redirectTo || '/register/profile')
         router.refresh()
       } else {
-        // 既存ユーザーのログイン処理 -> マイページへ
+        // 既存ユーザーのログイン処理 -> 指定ページ（なければマイページ）へ
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (error) throw error
 
-        router.push('/mypage')
+        // ★ redirectTo があればそのページ（/messages など）へ、無ければ /mypage へ
+        router.push(redirectTo || '/mypage')
         router.refresh()
       }
     } catch (error: any) {
