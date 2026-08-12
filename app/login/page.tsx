@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation' // ★ useSearchParams を追加
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { Mail, Lock, Loader2, Heart } from 'lucide-react'
 
-export default function LoginPage() {
+// ★ searchParams を使用するコンポーネントを分離
+function LoginFormContent() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -13,10 +14,9 @@ export default function LoginPage() {
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
 
   const router = useRouter()
-  const searchParams = useSearchParams() // ★ クエリパラメータを取得
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
-  // URLから ?redirectTo=/xxx を取得（指定がなければ null）
   const redirectTo = searchParams.get('redirectTo')
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -26,7 +26,6 @@ export default function LoginPage() {
 
     try {
       if (isSignUp) {
-        // 1. Supabase Auth でユーザー作成
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -34,7 +33,6 @@ export default function LoginPage() {
 
         if (signUpError) throw signUpError
 
-        // 2. セッションがない場合は明示的にログイン
         if (!signUpData.session) {
           const { error: signInError } = await supabase.auth.signInWithPassword({
             email,
@@ -43,18 +41,15 @@ export default function LoginPage() {
           if (signInError) throw signInError
         }
 
-        // 3. プロフィール初期登録画面（または指定されたページ）へリダイレクト
         router.push(redirectTo || '/register/profile')
         router.refresh()
       } else {
-        // 既存ユーザーのログイン処理 -> 指定ページ（なければマイページ）へ
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (error) throw error
 
-        // ★ redirectTo があればそのページ（/messages など）へ、無ければ /mypage へ
         router.push(redirectTo || '/mypage')
         router.refresh()
       }
@@ -73,8 +68,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center items-center gap-2 text-teal-600 font-bold text-2xl">
-          <Heart className="w-8 h-8 fill-current" />
-          <span>キッズナビ</span>
+          <span>カケハシファイル</span>
         </div>
         <h2 className="mt-4 text-center text-2xl font-bold tracking-tight text-gray-900">
           {isSignUp ? '新規会員登録' : '保護者ログイン'}
@@ -183,5 +177,18 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ★ メインのLoginPageコンポーネントで Suspense を適用
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs font-bold text-gray-400">
+        読み込み中...
+      </div>
+    }>
+      <LoginFormContent />
+    </Suspense>
   )
 }
