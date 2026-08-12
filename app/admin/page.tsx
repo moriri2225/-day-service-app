@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Facility, Schedule } from '@/types';
 import { 
-  Building2, Calendar, Save, ArrowLeft, RefreshCw, Sparkles, AlertCircle, Edit3, Image, MapPin, Phone, Clock, FileText, Car, Plus, ChevronDown, ChevronUp 
+  Building2, Calendar, Save, ArrowLeft, RefreshCw, Sparkles, AlertCircle, Edit3, Image, MapPin, Phone, Clock, FileText, Car, Plus, ChevronDown, ChevronUp, Lock 
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -16,6 +17,8 @@ const SERVICES = [
 ];
 
 export default function AdminPage() {
+  const router = useRouter();
+
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [selectedFacilityId, setSelectedFacilityId] = useState<number | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -52,13 +55,38 @@ export default function AdminPage() {
     offered_services: ['after_school'],
   });
 
-  // 初期データ取得
+  // 初期データ取得 ＆ 認証チェック
   useEffect(() => {
-    fetchInitialData();
+    checkAuthAndFetchData();
   }, []);
 
-  const fetchInitialData = async () => {
+  const checkAuthAndFetchData = async () => {
     setLoading(true);
+
+    // 1. ユーザーのログイン状態確認
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      // 未ログインなら事業者専用ログインページへ
+      router.push('/admin/login');
+      return;
+    }
+
+    // 2. 権限チェック（profilesのrole、またはfacilitiesの所有確認）
+    // まず profiles テーブルがある場合は role を確認
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profile && profile.role === 'parent') {
+      alert('事業者アカウントのみアクセス可能です。');
+      router.push('/mypage');
+      return;
+    }
+
+    // 3. データ取得
     const { data: facilitiesData, error: facError } = await supabase
       .from('facilities')
       .select('*')
@@ -300,13 +328,11 @@ export default function AdminPage() {
       const createdFac = data[0] as Facility;
       setMessage({ type: 'success', text: `「${createdFac.name}」を新規登録しました！` });
       
-      // 施設一覧を更新し、新規作成した施設を選択状態にする
       setFacilities((prev) => [...prev, createdFac]);
       setSelectedFacilityId(createdFac.id);
       initFacilityForm(createdFac);
       await fetchSchedules(createdFac.id);
 
-      // フォームリセット ＆ 折りたたむ
       setNewFacilityForm({
         name: '',
         description: '',
@@ -368,7 +394,7 @@ export default function AdminPage() {
           {loading ? (
             <div className="text-center py-12 text-xs font-bold text-gray-500 bg-white rounded-2xl border-2 border-[#E5DDD0]">
               <RefreshCw className="w-6 h-6 animate-spin text-[#2C9381] mx-auto mb-2" />
-              データを読み込み中...
+              アクセス権限とデータを確認中...
             </div>
           ) : (
             <>

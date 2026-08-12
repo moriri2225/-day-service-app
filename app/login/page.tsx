@@ -3,9 +3,9 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Mail, Lock, Loader2, Heart } from 'lucide-react'
+import { Mail, Lock, Loader2, ArrowLeft, Building2 } from 'lucide-react'
+import Link from 'next/link'
 
-// ★ searchParams を使用するコンポーネントを分離
 function LoginFormContent() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
@@ -26,6 +26,7 @@ function LoginFormContent() {
 
     try {
       if (isSignUp) {
+        // --- 新規会員登録処理 ---
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -33,6 +34,7 @@ function LoginFormContent() {
 
         if (signUpError) throw signUpError
 
+        // セッションが確立していない場合は自動ログイン
         if (!signUpData.session) {
           const { error: signInError } = await supabase.auth.signInWithPassword({
             email,
@@ -41,14 +43,43 @@ function LoginFormContent() {
           if (signInError) throw signInError
         }
 
+        const user = signUpData.user || (await supabase.auth.getUser()).data.user
+
+        // profiles テーブルに保護者権限（role: 'parent'）としてレコードを作成/更新
+        if (user) {
+          await supabase.from('profiles').upsert({
+            id: user.id,
+            email: user.email,
+            role: 'parent',
+          })
+        }
+
         router.push(redirectTo || '/register/profile')
         router.refresh()
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        // --- ログイン処理 ---
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (error) throw error
+
+        if (data.user) {
+          // profiles テーブルの role（権限）を確認
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', data.user.id)
+            .maybeSingle()
+
+          // 事業者権限（facility）の場合は事業者用ページへ自動遷移
+          if (profile && profile.role === 'facility') {
+            alert('事業者アカウントでログインされました。事業者用管理画面へ移動します。')
+            router.push('/admin')
+            router.refresh()
+            return
+          }
+        }
 
         router.push(redirectTo || '/mypage')
         router.refresh()
@@ -65,22 +96,41 @@ function LoginFormContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        
+        {/* トップへ戻る ＆ 事業者ログイン切り替えリンク */}
+        <div className="flex items-center justify-between mb-6 px-4 sm:px-0">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            トップへ戻る
+          </Link>
+          <Link
+            href="/admin/login"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 rounded-lg text-xs font-bold transition-all shadow-xs"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            事業者様はこちら
+          </Link>
+        </div>
+
         <div className="flex justify-center items-center gap-2 text-teal-600 font-bold text-2xl">
           <span>カケハシファイル</span>
         </div>
-        <h2 className="mt-4 text-center text-2xl font-bold tracking-tight text-gray-900">
+        <h2 className="mt-3 text-center text-2xl font-bold tracking-tight text-gray-900">
           {isSignUp ? '新規会員登録' : '保護者ログイン'}
         </h2>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow rounded-lg sm:px-10 border border-slate-100">
+        <div className="bg-white py-8 px-4 shadow-sm rounded-xl sm:px-10 border border-slate-200">
           <div className="flex border-b border-gray-200 mb-6">
             <button
               type="button"
-              className={`w-1/2 pb-3 text-center text-sm font-medium border-b-2 ${
+              className={`w-1/2 pb-3 text-center text-sm font-medium border-b-2 transition-all ${
                 !isSignUp
                   ? 'border-teal-500 text-teal-600 font-bold'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -94,7 +144,7 @@ function LoginFormContent() {
             </button>
             <button
               type="button"
-              className={`w-1/2 pb-3 text-center text-sm font-medium border-b-2 ${
+              className={`w-1/2 pb-3 text-center text-sm font-medium border-b-2 transition-all ${
                 isSignUp
                   ? 'border-teal-500 text-teal-600 font-bold'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -125,7 +175,7 @@ function LoginFormContent() {
               <label className="block text-sm font-medium text-gray-700">
                 メールアドレス
               </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
+              <div className="mt-1 relative rounded-md shadow-xs">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Mail className="h-5 w-5 text-gray-400" />
                 </div>
@@ -144,7 +194,7 @@ function LoginFormContent() {
               <label className="block text-sm font-medium text-gray-700">
                 パスワード
               </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
+              <div className="mt-1 relative rounded-md shadow-xs">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Lock className="h-5 w-5 text-gray-400" />
                 </div>
@@ -163,7 +213,7 @@ function LoginFormContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:opacity-50"
+              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-xs text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:opacity-50 cursor-pointer transition-colors"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -180,14 +230,15 @@ function LoginFormContent() {
   )
 }
 
-// ★ メインのLoginPageコンポーネントで Suspense を適用
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs font-bold text-gray-400">
-        読み込み中...
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs font-bold text-gray-400">
+          読み込み中...
+        </div>
+      }
+    >
       <LoginFormContent />
     </Suspense>
   )
