@@ -9,6 +9,7 @@ export interface Facility {
   opening_hours: string;
   image_url: string;
   offered_services: string[];
+  owner_id?: string | null;
 }
 
 export interface Schedule {

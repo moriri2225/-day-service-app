@@ -97,9 +97,9 @@ function AdminLoginFormContent() {
       }
 
       // 2. profilesテーブルに事業者権限（role: 'facility'）としてレコードを作成
+      // ('email'カラムはprofilesテーブルに存在しないため含めない。authユーザー側で保持されている)
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: user.id,
-        email: user.email,
         role: 'facility',
       })
 

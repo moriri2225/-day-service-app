@@ -20,6 +20,7 @@ export default function AdminPage() {
   const router = useRouter();
 
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedFacilityId, setSelectedFacilityId] = useState<number | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -72,24 +73,28 @@ export default function AdminPage() {
       return;
     }
 
-    // 2. 権限チェック（profilesのrole、またはfacilitiesの所有確認）
-    // まず profiles テーブルがある場合は role を確認
+    // 2. 権限チェック（ホワイトリスト方式。role === 'facility' のみ許可。
+    // middleware.tsのサーバーサイドチェックと同じ基準に揃える）
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .maybeSingle();
 
-    if (profile && profile.role === 'parent') {
+    if (profile?.role !== 'facility') {
       alert('事業者アカウントのみアクセス可能です。');
       router.push('/mypage');
       return;
     }
 
-    // 3. データ取得
+    setCurrentUserId(user.id);
+
+    // 3. データ取得（自分が所有する施設のみに限定。owner_idで絞らないと
+    // 他事業者の施設まで見えて編集できてしまうため必須）
     const { data: facilitiesData, error: facError } = await supabase
       .from('facilities')
       .select('*')
+      .eq('owner_id', user.id)
       .order('id');
 
     if (facError) {
@@ -261,7 +266,7 @@ export default function AdminPage() {
 
   // 2. 既存施設詳細情報の保存
   const handleSaveFacility = async () => {
-    if (!selectedFacilityId) return;
+    if (!selectedFacilityId || !currentUserId) return;
 
     setSavingFacility(true);
     setMessage(null);
@@ -278,7 +283,10 @@ export default function AdminPage() {
         has_pickup: facilityForm.has_pickup,
         offered_services: facilityForm.offered_services,
       })
-      .eq('id', selectedFacilityId);
+      .eq('id', selectedFacilityId)
+      // 一覧取得は owner_id で絞っているので selectedFacilityId は既に自分の施設のはずだが、
+      // 更新クエリ自体にも owner_id 条件を付けて多重に防御する
+      .eq('owner_id', currentUserId);
 
     setSavingFacility(false);
 
@@ -299,6 +307,7 @@ export default function AdminPage() {
       setMessage({ type: 'error', text: '施設名を入力してください。' });
       return;
     }
+    if (!currentUserId) return;
 
     setCreatingFacility(true);
     setMessage(null);
@@ -315,6 +324,7 @@ export default function AdminPage() {
           image_url: newFacilityForm.image_url,
           has_pickup: newFacilityForm.has_pickup,
           offered_services: newFacilityForm.offered_services,
+          owner_id: currentUserId,
         },
       ])
       .select();

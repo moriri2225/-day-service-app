@@ -55,18 +55,28 @@ export default function ProviderSignUp() {
       if (authError) throw authError;
 
       if (authData.user) {
-        // 2. facilities テーブルに新規施設レコードを作成
+        // 2. profiles テーブルに role: 'facility' でレコードを作成
+        // （これが無いと middleware.ts のホワイトリスト判定で /admin に入れなくなる。
+        // 'email'カラムはprofilesテーブルに存在しないため含めない）
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: authData.user.id,
+          role: 'facility',
+        });
+
+        if (profileError) throw profileError;
+
+        // 3. facilities テーブルに owner_id 付きで新規施設レコードを作成
+        // （owner_id が無いと /admin の施設一覧に自分の施設として出てこない）
         const { error: facilityError } = await supabase.from('facilities').insert([
           {
             name: formData.facilityName,
             phone_number: formData.phone,
             address: formData.address,
+            owner_id: authData.user.id,
           },
         ]);
 
-        if (facilityError) {
-          console.error('施設初期データの作成エラー:', facilityError);
-        }
+        if (facilityError) throw facilityError;
 
         // 登録完了後、管理者画面へ遷移
         router.push('/admin');
