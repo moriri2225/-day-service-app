@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Facility, Schedule } from '@/types';
-import { 
-  Building2, Calendar, Save, ArrowLeft, RefreshCw, Sparkles, AlertCircle, Edit3, Image, MapPin, Phone, Clock, FileText, Car, Plus, ChevronDown, ChevronUp, Lock 
+import {
+  Building2, Calendar, Save, ArrowLeft, RefreshCw, Sparkles, AlertCircle, Edit3, Image, MapPin, Phone, Clock, FileText, Car, Plus, ChevronDown, ChevronUp, Lock, MessageSquare
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -381,9 +381,18 @@ export default function AdminPage() {
             <ArrowLeft className="w-4 h-4 text-[#2C9381]" />
             トップページに戻る
           </Link>
-          <div className="flex items-center gap-1.5 text-xs font-black bg-[#EAF7F4] text-[#2C9381] border-2 border-[#A8DDD3] px-3 py-1.5 rounded-xl shadow-xs">
-            <Building2 className="w-4 h-4" />
-            事業者管理画面
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/messages"
+              className="px-3.5 py-2 bg-white hover:bg-[#FAF8F5] text-[#2C9381] border-2 border-[#A8DDD3] rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <MessageSquare className="w-4 h-4" />
+              お問い合わせ管理
+            </Link>
+            <div className="flex items-center gap-1.5 text-xs font-black bg-[#EAF7F4] text-[#2C9381] border-2 border-[#A8DDD3] px-3 py-1.5 rounded-xl shadow-xs">
+              <Building2 className="w-4 h-4" />
+              事業者管理画面
+            </div>
           </div>
         </div>
 

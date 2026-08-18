@@ -42,6 +42,30 @@ export default function ChatPage() {
   }, [conversationId]);
 
   useEffect(() => {
+    if (!conversationId) return;
+
+    // 施設側からの返信をリアルタイムで反映する（再読み込み無しで届くように）
+    const channel = supabase
+      .channel(`messages-${conversationId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          setMessages((prev) => {
+            const incoming = payload.new as Message;
+            if (prev.some((m) => m.id === incoming.id)) return prev;
+            return [...prev, incoming];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
     // 新しいメッセージが追加されたら最下部へ自動スクロール
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -102,6 +126,7 @@ export default function ChatPage() {
       .from('messages')
       .insert({
         conversation_id: conversationId,
+        sender_type: 'user',
         sender_id: user.id,
         content: textToSend,
       })
@@ -109,7 +134,11 @@ export default function ChatPage() {
       .single();
 
     if (!error && data) {
-      setMessages((prev) => [...prev, data as Message]);
+      // Realtime購読からも同じINSERTが届くため、二重追加を防ぐ
+      setMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data as Message]));
+    } else if (error) {
+      console.error('メッセージの送信に失敗しました:', error);
+      setNewMessage(textToSend);
     }
   };
 
