@@ -10,6 +10,12 @@ import {
 import { createClient } from '@/utils/supabase/client';
 import { isLocalBookmarked, toggleLocalBookmark } from '@/lib/storage';
 import { Facility, Schedule } from '@/types';
+import {
+  getLatestUpdatedAt,
+  formatUpdatedAtLong,
+  isScheduleStale,
+  STALE_SCHEDULE_NOTICE,
+} from '@/lib/scheduleFreshness';
 
 interface ChildInfo {
   name: string;
@@ -210,6 +216,8 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
   }
 
   const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
+  const lastUpdatedAt = getLatestUpdatedAt(schedules);
+  const isLastUpdatedStale = isScheduleStale(lastUpdatedAt);
 
   const renderStatusBadge = (status?: string, count?: number) => {
     if (status === 'available') return <span className="text-green-600 font-bold">◯ 空きあり ({count})</span>;
@@ -301,10 +309,17 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
 
         {/* 曜日別 リアルタイム空き状況 */}
         <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm">
-          <h2 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-orange-500" />
             曜日別リアルタイム空き状況
           </h2>
+
+          {lastUpdatedAt && (
+            <p className={`text-sm font-bold mb-4 ${isLastUpdatedStale ? 'text-gray-500' : 'text-gray-400'}`}>
+              更新: {formatUpdatedAtLong(lastUpdatedAt)}
+              {isLastUpdatedStale && `。${STALE_SCHEDULE_NOTICE}`}
+            </p>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-center text-xs border-collapse">

@@ -4,12 +4,18 @@ import { useState, useEffect, useMemo } from 'react';
 // ★ Supabaseクライアントの参照元を @/utils/supabase/client に統一
 import { createClient } from '@/utils/supabase/client';
 import { Facility, Schedule } from '@/types';
-import { 
-  Search, MapPin, Phone, Clock, Car, Calendar, 
-  Bookmark, Paperclip, Tag, LayoutGrid, List, ArrowUpDown, ChevronRight, MessageSquare, Lock, RotateCcw 
+import {
+  Search, MapPin, Phone, Clock, Car, Calendar,
+  Bookmark, Paperclip, Tag, LayoutGrid, List, ArrowUpDown, ChevronRight, MessageSquare, Lock, RotateCcw
 } from 'lucide-react';
 import Link from 'next/link';
 import { User } from '@supabase/supabase-js';
+import {
+  getLatestUpdatedAt,
+  formatUpdatedAtShort,
+  isScheduleStale,
+  STALE_SCHEDULE_NOTICE,
+} from '@/lib/scheduleFreshness';
 
 export default function Home() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
@@ -80,6 +86,11 @@ export default function Home() {
         if (s.status === 'few') return acc + 1;
         return acc;
       }, 0);
+  };
+
+  // 施設単位の最終更新日時（曜日×サービス単位のupdated_atのうち最新のもの）
+  const getFacilityLastUpdatedAt = (facilityId: number) => {
+    return getLatestUpdatedAt(schedules.filter((s) => s.facility_id === facilityId));
   };
 
   const processedFacilities = useMemo(() => {
@@ -468,6 +479,18 @@ export default function Home() {
                           );
                         })}
                       </div>
+
+                      {(() => {
+                        const lastUpdatedAt = getFacilityLastUpdatedAt(facility.id);
+                        if (!lastUpdatedAt) return null;
+                        const stale = isScheduleStale(lastUpdatedAt);
+                        return (
+                          <p className={`text-[10px] font-bold mt-1.5 px-0.5 ${stale ? 'text-gray-500' : 'text-gray-400'}`}>
+                            最終更新: {formatUpdatedAtShort(lastUpdatedAt)}
+                            {stale && `。${STALE_SCHEDULE_NOTICE}`}
+                          </p>
+                        );
+                      })()}
                     </div>
 
                   </div>
@@ -545,7 +568,7 @@ export default function Home() {
                   <div className="grid grid-cols-6 gap-1 text-center w-full">
                     {days.map((day) => {
                       const daySchedules = schedules.filter(
-                        (s) => s.facility_id === facility.id && 
+                        (s) => s.facility_id === facility.id &&
                                s.day_of_week === day &&
                                (selectedService === 'all' || s.service_type === selectedService)
                       );
@@ -554,8 +577,8 @@ export default function Home() {
                       const isTargetDay = selectedDay === day;
 
                       return (
-                        <div 
-                          key={day} 
+                        <div
+                          key={day}
                           className={`flex flex-col items-center justify-center min-w-0 p-1 rounded-md transition-all ${
                             isTargetDay ? 'bg-[#EAF7F4] border border-[#2C9381]' : ''
                           }`}
@@ -578,6 +601,18 @@ export default function Home() {
                       );
                     })}
                   </div>
+
+                  {(() => {
+                    const lastUpdatedAt = getFacilityLastUpdatedAt(facility.id);
+                    if (!lastUpdatedAt) return null;
+                    const stale = isScheduleStale(lastUpdatedAt);
+                    return (
+                      <p className={`text-[10px] font-bold mt-1 text-center ${stale ? 'text-gray-500' : 'text-gray-400'}`}>
+                        最終更新: {formatUpdatedAtShort(lastUpdatedAt)}
+                        {stale && `。${STALE_SCHEDULE_NOTICE}`}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0 pt-1 md:pt-0">

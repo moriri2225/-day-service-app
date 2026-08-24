@@ -23,6 +23,8 @@ export default function AdminPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedFacilityId, setSelectedFacilityId] = useState<number | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  // DB取得時点のスケジュール（差分検出用。保存時にこれと比較し、実際に変更された行だけをupsertする）
+  const [savedSchedules, setSavedSchedules] = useState<Schedule[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [savingSchedule, setSavingSchedule] = useState<boolean>(false);
   const [savingFacility, setSavingFacility] = useState<boolean>(false);
@@ -141,7 +143,9 @@ export default function AdminPage() {
       return;
     }
 
-    setSchedules((data as Schedule[]) || []);
+    const fetched = (data as Schedule[]) || [];
+    setSchedules(fetched);
+    setSavedSchedules(fetched);
   };
 
   // 施設切替ハンドラー
@@ -162,6 +166,14 @@ export default function AdminPage() {
   // 特定の曜日・サービスのステータスを取得（未存在なら 'full'）
   const getStatus = (serviceType: string, day: string): 'available' | 'few' | 'full' => {
     const item = schedules.find(
+      (s) => s.service_type === serviceType && s.day_of_week === day
+    );
+    return (item?.status as 'available' | 'few' | 'full') || 'full';
+  };
+
+  // DB保存時点のステータスを取得（保存差分の比較用。未存在なら getStatus と同じ'full'扱い）
+  const getSavedStatus = (serviceType: string, day: string): 'available' | 'few' | 'full' => {
+    const item = savedSchedules.find(
       (s) => s.service_type === serviceType && s.day_of_week === day
     );
     return (item?.status as 'available' | 'few' | 'full') || 'full';
@@ -205,9 +217,14 @@ export default function AdminPage() {
 
     const upsertData: Array<{ facility_id: number; service_type: string; day_of_week: string; status: string }> = [];
 
+    // 実際にステータスが変わった曜日×サービスの行だけを保存対象にする。
+    // 変更のない行までまとめてupsertすると、その行のupdated_atまで更新されてしまい
+    // 「最終更新日時」の信頼性が損なわれるため。
     offeredServices.forEach((serviceType) => {
       DAYS.forEach((day) => {
         const status = getStatus(serviceType, day);
+        if (status === getSavedStatus(serviceType, day)) return;
+
         upsertData.push({
           facility_id: selectedFacilityId,
           service_type: serviceType,
@@ -216,6 +233,12 @@ export default function AdminPage() {
         });
       });
     });
+
+    if (upsertData.length === 0) {
+      setSavingSchedule(false);
+      setMessage({ type: 'success', text: '変更がなかったため、保存をスキップしました。' });
+      return;
+    }
 
     const { error } = await supabase
       .from('schedules')
