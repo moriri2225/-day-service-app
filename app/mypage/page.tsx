@@ -9,6 +9,8 @@ import {
   FileCheck, AlertCircle, Clock
 } from 'lucide-react';
 import { getLocalBookmarks, toggleLocalBookmark, getLocalInquiries } from '@/lib/storage';
+import { recordConsent } from '@/lib/consent';
+import SensitiveInfoConsent from '@/components/SensitiveInfoConsent';
 import { Facility, InquiryHistory } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { User as SupabaseUser } from '@supabase/supabase-js';
@@ -153,6 +155,7 @@ export default function MyPage() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
+  const [sensitiveConsent, setSensitiveConsent] = useState(false); // 受給者証番号・サービス種別の要配慮情報同意
 
   // 契約中施設リストのステート
   const [contracts, setContracts] = useState<ContractFacility[]>([]);
@@ -347,6 +350,14 @@ export default function MyPage() {
       updated_at: new Date().toISOString(),
     });
 
+    // handleSaveProfileは契約情報編集フォーム(isEditingContracts)とも共用のため、
+    // プロフィール編集フォーム経由の保存時のみ同意記録の対象とする。
+    if (!error && sensitiveConsent && isEditingProfile) {
+      // 受給者証番号・サービス種別の要配慮情報同意を記録する。
+      // consentsテーブル未作成時は失敗しうるが、プロフィール保存自体はブロックしない。
+      await recordConsent(supabase, currentUser.id, 'sensitive_info');
+    }
+
     setSavingProfile(false);
 
     if (error) {
@@ -524,6 +535,8 @@ export default function MyPage() {
                     </button>
                   </div>
 
+                  <SensitiveInfoConsent checked={sensitiveConsent} onChange={setSensitiveConsent} />
+
                   {profile.children.map((child, childIdx) => (
                     <div key={childIdx} className="bg-[#FFFEEF] p-4 rounded-2xl border-2 border-[#E5DDD0] space-y-4">
                       <div className="flex items-center justify-between border-b border-[#E5DDD0] pb-2">
@@ -599,8 +612,11 @@ export default function MyPage() {
                               type="text"
                               placeholder="例: 10桁の受給者証番号"
                               value={child.beneficiary_number}
+                              disabled={!sensitiveConsent}
                               onChange={(e) => handleChildChange(childIdx, 'beneficiary_number', e.target.value)}
-                              className="w-full p-2 bg-white rounded-lg border border-[#E5DDD0] font-bold text-gray-800 focus:outline-none focus:border-[#D96B85] text-xs"
+                              className={`w-full p-2 bg-white rounded-lg border border-[#E5DDD0] font-bold text-gray-800 focus:outline-none focus:border-[#D96B85] text-xs ${
+                                !sensitiveConsent ? 'opacity-40 cursor-not-allowed bg-gray-100' : ''
+                              }`}
                             />
                           </div>
                           <div>
@@ -626,12 +642,13 @@ export default function MyPage() {
                                 <button
                                   type="button"
                                   key={service}
+                                  disabled={!sensitiveConsent}
                                   onClick={() => handleChildServiceToggle(childIdx, service)}
                                   className={`p-2 rounded-xl border-2 text-left transition flex items-center gap-2 text-xs cursor-pointer ${
                                     checked
                                       ? 'border-[#D96B85] bg-[#FFF0F3] text-[#D96B85] font-black'
                                       : 'border-[#E5DDD0] bg-white text-gray-600 hover:bg-gray-50'
-                                  }`}
+                                  } ${!sensitiveConsent ? 'opacity-40 cursor-not-allowed' : ''}`}
                                 >
                                   {checked ? <CheckSquare className="w-4 h-4 text-[#D96B85] shrink-0" /> : <Square className="w-4 h-4 text-gray-300 shrink-0" />}
                                   <span>{service}</span>

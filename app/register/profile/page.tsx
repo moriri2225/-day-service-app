@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { recordConsent } from '@/lib/consent';
+import SensitiveInfoConsent from '@/components/SensitiveInfoConsent';
 import { User, Phone, MapPin, Baby, Plus, Trash2, CheckSquare, Square, ArrowRight, Loader2 } from 'lucide-react';
 
 interface ChildInfo {
@@ -33,6 +35,7 @@ export default function ProfileSetupPage() {
   const [children, setChildren] = useState<ChildInfo[]>([
     { name: '', age_grade: '', beneficiary_number: '', available_services: [] }
   ]);
+  const [sensitiveConsent, setSensitiveConsent] = useState(false); // 受給者証番号・サービス種別の要配慮情報同意
 
   const handleAddChild = () => {
     setChildren([
@@ -86,6 +89,12 @@ export default function ProfileSetupPage() {
       });
 
       if (error) throw error;
+
+      if (sensitiveConsent) {
+        // 受給者証番号・サービス種別の要配慮情報同意を記録する。
+        // consentsテーブル未作成時は失敗しうるが、プロフィール保存自体はブロックしない。
+        await recordConsent(supabase, user.id, 'sensitive_info');
+      }
 
       router.push('/mypage');
       router.refresh();
@@ -176,6 +185,8 @@ export default function ProfileSetupPage() {
               </button>
             </div>
 
+            <SensitiveInfoConsent checked={sensitiveConsent} onChange={setSensitiveConsent} />
+
             {children.map((child, idx) => (
               <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2">
@@ -222,8 +233,11 @@ export default function ProfileSetupPage() {
                     type="text"
                     placeholder="例: 1234567890"
                     value={child.beneficiary_number}
+                    disabled={!sensitiveConsent}
                     onChange={(e) => handleChildChange(idx, 'beneficiary_number', e.target.value)}
-                    className="w-full p-2 rounded-lg border border-gray-300 bg-white"
+                    className={`w-full p-2 rounded-lg border border-gray-300 bg-white ${
+                      !sensitiveConsent ? 'opacity-40 cursor-not-allowed bg-gray-100' : ''
+                    }`}
                   />
                 </div>
 
@@ -236,10 +250,11 @@ export default function ProfileSetupPage() {
                         <button
                           type="button"
                           key={service}
+                          disabled={!sensitiveConsent}
                           onClick={() => handleServiceToggle(idx, service)}
                           className={`p-2 rounded-lg border text-left flex items-center gap-2 ${
                             checked ? 'border-teal-500 bg-teal-50 text-teal-800 font-bold' : 'border-gray-200 bg-white text-gray-600'
-                          }`}
+                          } ${!sensitiveConsent ? 'opacity-40 cursor-not-allowed' : ''}`}
                         >
                           {checked ? <CheckSquare className="w-4 h-4 text-teal-600" /> : <Square className="w-4 h-4 text-gray-300" />}
                           <span>{service}</span>

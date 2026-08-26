@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { recordConsent } from '@/lib/consent'
 import { Mail, Lock, Loader2, ArrowLeft, Building2, Sparkles, Heart, Eye, EyeOff, Paperclip, HelpCircle, Send } from 'lucide-react'
 import Link from 'next/link'
 
@@ -12,6 +13,7 @@ function LoginFormContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [agreedToTerms, setAgreedToTerms] = useState(false) // 利用規約・プライバシーポリシーへの包括同意
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
 
@@ -57,6 +59,10 @@ function LoginFormContent() {
 
     try {
       if (isSignUp) {
+        if (!agreedToTerms) {
+          throw new Error('利用規約およびプライバシーポリシーへの同意が必要です。')
+        }
+
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -78,6 +84,10 @@ function LoginFormContent() {
             email: user.email,
             role: 'parent',
           })
+
+          // 利用規約・プライバシーポリシーへの包括同意を記録する。
+          // consentsテーブル未作成時は失敗しうるが、会員登録自体はブロックしない。
+          await recordConsent(supabase, user.id, 'general')
         }
 
         router.push(redirectTo || '/register/profile')
@@ -336,9 +346,33 @@ function LoginFormContent() {
                 </div>
               </div>
 
+              {isSignUp && (
+                <label className="flex items-start gap-2 pt-1 pl-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(e) => setAgreedToTerms(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#D96B85] cursor-pointer shrink-0"
+                  />
+                  <span className="text-xs font-bold text-gray-700 leading-relaxed">
+                    利用規約およびプライバシーポリシーの内容を確認し、これに同意します。
+                    <br />
+                    （
+                    <Link href="/terms" target="_blank" rel="noopener noreferrer" className="text-[#D96B85] underline">
+                      利用規約はこちら
+                    </Link>
+                    ）（
+                    <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="text-[#D96B85] underline">
+                      プライバシーポリシーはこちら
+                    </Link>
+                    ）
+                  </span>
+                </label>
+              )}
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (isSignUp && !agreedToTerms)}
                 className="w-full mt-3 py-3 px-4 bg-[#D96B85] hover:bg-[#C0546E] text-white rounded-xl text-xs font-black shadow-xs transition-all flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {loading ? (
