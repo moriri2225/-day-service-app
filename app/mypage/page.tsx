@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
-  Heart, Calendar, MapPin, Trash2, ArrowLeft, Building2, 
+  Heart, Calendar, MapPin, Trash2, ArrowLeft, Building2,
   CheckCircle2, LogOut, User, Edit2, Save, X, Plus, CheckSquare, Square, Baby, Paperclip,
-  FileCheck, AlertCircle, Clock
+  FileCheck, AlertCircle, Clock, Lock
 } from 'lucide-react';
-import { getLocalBookmarks, toggleLocalBookmark, getLocalInquiries } from '@/lib/storage';
+import { getLocalBookmarks, toggleLocalBookmark } from '@/lib/storage';
 import { recordConsent } from '@/lib/consent';
 import SensitiveInfoConsent from '@/components/SensitiveInfoConsent';
-import { Facility, InquiryHistory } from '@/types';
+import { Facility } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 
@@ -32,6 +32,24 @@ interface Profile {
   phone_number: string;
   address: string;
   children: ChildInfo[];
+}
+
+// 見学申込・問合せ履歴（conversationsテーブルから取得）
+interface InquiryConversation {
+  id: string;
+  facility_id: number;
+  applicant_name: string;
+  child_info: string;
+  phone_number: string;
+  preferred_date: string;
+  created_at: string;
+  facilities: {
+    name: string;
+  } | null;
+  messages?: {
+    content: string;
+    created_at: string;
+  }[];
 }
 
 // 契約・利用中施設の情報
@@ -137,7 +155,7 @@ export default function MyPage() {
 
   const [activeTab, setActiveTab] = useState<'contracts' | 'bookmarks' | 'inquiries'>('contracts');
   const [bookmarkedFacilities, setBookmarkedFacilities] = useState<Facility[]>([]);
-  const [inquiries, setInquiries] = useState<InquiryHistory[]>([]);
+  const [inquiries, setInquiries] = useState<InquiryConversation[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ログインユーザー情報
@@ -242,9 +260,36 @@ export default function MyPage() {
       setBookmarkedFacilities([]);
     }
 
-    // 4. Fetch Inquiries
-    const history = getLocalInquiries();
-    setInquiries(history);
+    // 4. Fetch Inquiries（見学申込・問合せ履歴。conversationsテーブルをuser_idで取得。
+    //    未ログイン時は自分の問い合わせがそもそも存在しないため取得しない）
+    if (user) {
+      const { data: inquiryData, error: inquiryError } = await supabase
+        .from('conversations')
+        .select(`
+          id,
+          facility_id,
+          applicant_name,
+          child_info,
+          phone_number,
+          preferred_date,
+          created_at,
+          facilities (
+            name
+          ),
+          messages (
+            content,
+            created_at
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (!inquiryError && inquiryData) {
+        setInquiries(inquiryData as unknown as InquiryConversation[]);
+      }
+    } else {
+      setInquiries([]);
+    }
 
     setLoading(false);
   };
@@ -433,7 +478,7 @@ export default function MyPage() {
               ) : (
                 <>
                   <p className="font-black text-gray-900 text-base">ゲスト（お試し）で利用中</p>
-                  <p className="text-xs text-gray-500 font-bold">お気に入りや見学申込履歴はこのブラウザに保存されています。</p>
+                  <p className="text-xs text-gray-500 font-bold">お気に入りはこのブラウザに保存されています。見学申込履歴の確認にはログインが必要です。</p>
                 </>
               )}
             </div>
@@ -1118,10 +1163,21 @@ export default function MyPage() {
               </div>
             )}
 
-            {/* === 問合せ履歴 === */}
+            {/* === 見学・問合せ履歴（conversationsテーブルより表示） === */}
             {activeTab === 'inquiries' && (
               <div>
-                {inquiries.length === 0 ? (
+                {!currentUser ? (
+                  <div className="bg-[#FFFEEF] border-2 border-[#E5DDD0] p-8 rounded-3xl text-center space-y-3">
+                    <Lock className="w-8 h-8 text-gray-300 mx-auto" />
+                    <p className="font-black text-gray-700 text-sm">見学・問合せ履歴の確認にはログインが必要です</p>
+                    <Link
+                      href="/login?redirectTo=/mypage"
+                      className="inline-block bg-[#D96B85] hover:bg-[#C0546E] text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-xs transition-all"
+                    >
+                      ログイン画面へ
+                    </Link>
+                  </div>
+                ) : inquiries.length === 0 ? (
                   <div className="bg-[#FAF8F5] rounded-3xl border-2 border-[#D8CEBF] p-10 text-center space-y-2">
                     <Calendar className="w-10 h-10 text-gray-300 mx-auto" />
                     <p className="font-black text-gray-700">見学申し込みの履歴はありません</p>
@@ -1135,57 +1191,73 @@ export default function MyPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {inquiries.map((inq) => (
-                      <div
-                        key={inq.id}
-                        className="bg-white rounded-2xl border-2 border-[#D8CEBF] p-5 shadow-xs relative"
-                      >
-                        <div className="flex items-center justify-between mb-3 border-b border-[#E5DDD0] pb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="bg-[#EAF7F4] text-[#2C9381] border border-[#A8DDD3] text-xs font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              送信完了
-                            </span>
-                            <span className="text-xs font-bold text-gray-400">
-                              {new Date(inq.created_at).toLocaleDateString('ja-JP')}
-                            </span>
+                    {inquiries.map((inq) => {
+                      const sortedMessages = [...(inq.messages || [])].sort(
+                        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                      );
+                      const firstMessage = sortedMessages[0];
+
+                      return (
+                        <div
+                          key={inq.id}
+                          className="bg-white rounded-2xl border-2 border-[#D8CEBF] p-5 shadow-xs relative"
+                        >
+                          <div className="flex items-center justify-between mb-3 border-b border-[#E5DDD0] pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-[#EAF7F4] text-[#2C9381] border border-[#A8DDD3] text-xs font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                送信完了
+                              </span>
+                              <span className="text-xs font-bold text-gray-400">
+                                {new Date(inq.created_at).toLocaleDateString('ja-JP')}
+                              </span>
+                            </div>
+                            <Link
+                              href={`/facility/${inq.facility_id}`}
+                              className="text-xs text-[#D96B85] hover:underline font-black"
+                            >
+                              施設ページへ ↗
+                            </Link>
                           </div>
-                          <Link
-                            href={`/facility/${inq.facility_id}`}
-                            className="text-xs text-[#D96B85] hover:underline font-black"
-                          >
-                            施設ページへ ↗
-                          </Link>
+
+                          <h3 className="font-black text-gray-900 text-base mb-2 flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-[#2C9381]" />
+                            {inq.facilities?.name || '施設名未設定'}
+                          </h3>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#FFFEEF] p-3 rounded-xl text-xs font-bold text-gray-700 mb-3 border border-[#E5DDD0]">
+                            <div>
+                              <span className="text-gray-400">保護者氏名:</span> {inq.applicant_name} 様
+                            </div>
+                            <div>
+                              <span className="text-gray-400">お子様情報:</span> {inq.child_info || '未回答'}
+                            </div>
+                            <div>
+                              <span className="text-gray-400">連絡先電話:</span> {inq.phone_number}
+                            </div>
+                            <div>
+                              <span className="text-gray-400">第一希望日時:</span> {inq.preferred_date || '希望なし'}
+                            </div>
+                          </div>
+
+                          {firstMessage && (
+                            <div className="text-xs font-bold text-gray-600 bg-gray-50 p-3 rounded-xl border border-[#E5DDD0] mb-3">
+                              <span className="font-black text-gray-500 block mb-1">ご相談・メモ:</span>
+                              <p className="whitespace-pre-wrap">{firstMessage.content}</p>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end">
+                            <Link
+                              href={`/messages/${inq.id}`}
+                              className="text-xs text-[#2C9381] hover:underline font-black flex items-center gap-1"
+                            >
+                              トークを開く ↗
+                            </Link>
+                          </div>
                         </div>
-
-                        <h3 className="font-black text-gray-900 text-base mb-2 flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-[#2C9381]" />
-                          {inq.facility_name}
-                        </h3>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#FFFEEF] p-3 rounded-xl text-xs font-bold text-gray-700 mb-3 border border-[#E5DDD0]">
-                          <div>
-                            <span className="text-gray-400">保護者氏名:</span> {inq.applicant_name} 様
-                          </div>
-                          <div>
-                            <span className="text-gray-400">お子様の学年:</span> {inq.child_age || '未回答'}
-                          </div>
-                          <div>
-                            <span className="text-gray-400">連絡先電話:</span> {inq.phone_number}
-                          </div>
-                          <div>
-                            <span className="text-gray-400">第一希望日時:</span> {inq.preferred_date || '希望なし'}
-                          </div>
-                        </div>
-
-                        {inq.message && (
-                          <div className="text-xs font-bold text-gray-600 bg-gray-50 p-3 rounded-xl border border-[#E5DDD0]">
-                            <span className="font-black text-gray-500 block mb-1">ご相談・メモ:</span>
-                            <p className="whitespace-pre-wrap">{inq.message}</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

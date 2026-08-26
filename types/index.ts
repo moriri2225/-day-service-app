@@ -22,16 +22,3 @@ export interface Schedule {
   updated_at: string;
 }
 
-export interface InquiryHistory {
-  id: string;
-  facility_id: number;
-  facility_name: string;
-  applicant_name: string;
-  child_age: string;
-  email: string;
-  phone_number: string;
-  preferred_date: string;
-  message: string;
-  created_at: string;
-  status: 'pending' | 'confirmed' | 'cancelled';
-}
