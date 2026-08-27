@@ -9,13 +9,24 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { isLocalBookmarked, toggleLocalBookmark } from '@/lib/storage';
-import { Facility, Schedule } from '@/types';
+import { Facility, Schedule, FacilityServiceStatus } from '@/types';
 import {
   getLatestUpdatedAt,
   formatUpdatedAtLong,
   isScheduleStale,
   STALE_SCHEDULE_NOTICE,
 } from '@/lib/scheduleFreshness';
+import {
+  SERVICE_TYPES_BY_GROUP,
+  facilityHasGroup,
+  VISIT_STATUS_TEXT,
+  VISIT_STATUS_COLOR,
+  VISIT_STATUS_NOTE,
+  CONSULTATION_STATUS_TEXT,
+  CONSULTATION_STATUS_COLOR,
+  CONSULTATION_STATUS_NOTE,
+  SERVICE_STATUS_UNAVAILABLE_NOTICE,
+} from '@/lib/serviceTypes';
 
 interface ChildInfo {
   name: string;
@@ -29,6 +40,7 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
   const [facilityId, setFacilityId] = useState<number | null>(null);
   const [facility, setFacility] = useState<Facility | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [serviceStatuses, setServiceStatuses] = useState<FacilityServiceStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
@@ -128,8 +140,27 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
       setSchedules(scheduleData);
     }
 
+    // 訪問系・相談支援系の対応状況（提案SQL未適用の環境ではエラーになるため、
+    // その場合は握りつぶして空配列のまま扱う＝「情報がありません」表示にフォールバック）
+    try {
+      const { data: statusData, error: statusError } = await supabaseClient
+        .from('facility_service_status')
+        .select('*')
+        .eq('facility_id', id);
+      if (statusError) {
+        console.warn('facility_service_status取得エラー（未適用の可能性）:', statusError.message);
+      } else if (statusData) {
+        setServiceStatuses(statusData as FacilityServiceStatus[]);
+      }
+    } catch (e) {
+      console.warn('facility_service_status取得に失敗しました:', e);
+    }
+
     setLoading(false);
   };
+
+  const getServiceStatus = (serviceType: string) =>
+    serviceStatuses.find((s) => s.service_type === serviceType);
 
   const handleToggleBookmark = () => {
     if (facilityId === null) return;
@@ -219,6 +250,12 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
   const lastUpdatedAt = getLatestUpdatedAt(schedules);
   const isLastUpdatedStale = isScheduleStale(lastUpdatedAt);
 
+  // 通所系を提供しない（訪問系・相談支援系のみの）施設は「見学」という体験に当てはまらないため、
+  // お問い合わせフォームの文言を「ご相談」ベースに差し替える(設計書6章)
+  const isVisitOrConsultationOnly =
+    !facilityHasGroup(facility.offered_services, 'commute') &&
+    (facilityHasGroup(facility.offered_services, 'visit') || facilityHasGroup(facility.offered_services, 'consultation'));
+
   const renderStatusBadge = (status?: string, count?: number) => {
     if (status === 'available') return <span className="text-green-600 font-bold">◯ 空きあり ({count})</span>;
     if (status === 'few') return <span className="text-amber-600 font-bold">▲ 残りわずか ({count})</span>;
@@ -307,49 +344,126 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
           </div>
         </div>
 
-        {/* 曜日別 リアルタイム空き状況 */}
-        <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm">
-          <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-orange-500" />
-            曜日別リアルタイム空き状況
-          </h2>
+        {/* 通所サービスの空き状況（通所系を1つでも提供している場合のみ表示） */}
+        {facilityHasGroup(facility.offered_services, 'commute') && (
+          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm">
+            <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-orange-500" />
+              曜日別リアルタイム空き状況
+            </h2>
 
-          {lastUpdatedAt && (
-            <p className={`text-sm font-bold mb-4 ${isLastUpdatedStale ? 'text-gray-500' : 'text-gray-400'}`}>
-              更新: {formatUpdatedAtLong(lastUpdatedAt)}
-              {isLastUpdatedStale && `。${STALE_SCHEDULE_NOTICE}`}
-            </p>
-          )}
+            {lastUpdatedAt && (
+              <p className={`text-sm font-bold mb-4 ${isLastUpdatedStale ? 'text-gray-500' : 'text-gray-400'}`}>
+                更新: {formatUpdatedAtLong(lastUpdatedAt)}
+                {isLastUpdatedStale && `。${STALE_SCHEDULE_NOTICE}`}
+              </p>
+            )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-center text-xs border-collapse">
-              <thead>
-                <tr className="bg-orange-50 border-b border-orange-100">
-                  <th className="p-2 text-left font-bold text-gray-700">サービス種別</th>
-                  {daysOfWeek.map((day) => (
-                    <th key={day} className="p-2 font-bold text-gray-700">{day}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-50">
-                <tr>
-                  <td className="p-3 text-left font-bold text-gray-700">放課後等デイサービス</td>
-                  {daysOfWeek.map((day) => {
-                    const sch = schedules.find(s => s.service_type === 'after_school' && s.day_of_week === day);
-                    return <td key={day} className="p-3">{renderStatusBadge(sch?.status, sch?.available_count)}</td>;
-                  })}
-                </tr>
-                <tr>
-                  <td className="p-3 text-left font-bold text-gray-700">児童発達支援</td>
-                  {daysOfWeek.map((day) => {
-                    const sch = schedules.find(s => s.service_type === 'developmental_support' && s.day_of_week === day);
-                    return <td key={day} className="p-3">{renderStatusBadge(sch?.status, sch?.available_count)}</td>;
-                  })}
-                </tr>
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-center text-xs border-collapse">
+                <thead>
+                  <tr className="bg-orange-50 border-b border-orange-100">
+                    <th className="p-2 text-left font-bold text-gray-700">サービス種別</th>
+                    {daysOfWeek.map((day) => (
+                      <th key={day} className="p-2 font-bold text-gray-700">{day}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-orange-50">
+                  {SERVICE_TYPES_BY_GROUP.commute
+                    .filter((s) => facility.offered_services?.includes(s.id))
+                    .map((s) => (
+                      <tr key={s.id}>
+                        <td className="p-3 text-left font-bold text-gray-700">{s.label}</td>
+                        {daysOfWeek.map((day) => {
+                          const sch = schedules.find((sc) => sc.service_type === s.id && sc.day_of_week === day);
+                          return <td key={day} className="p-3">{renderStatusBadge(sch?.status, sch?.available_count)}</td>;
+                        })}
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* 訪問サービスの対応状況（訪問系を1つでも提供している場合のみ表示） */}
+        {facilityHasGroup(facility.offered_services, 'visit') && (
+          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm space-y-4">
+            <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-orange-500" />
+              訪問サービスの対応状況について
+            </h2>
+
+            {SERVICE_TYPES_BY_GROUP.visit
+              .filter((s) => facility.offered_services?.includes(s.id))
+              .map((s) => {
+                const status = getServiceStatus(s.id);
+                return (
+                  <div key={s.id} className="bg-[#EEF2FB] p-4 rounded-xl border border-[#C7D5F0]">
+                    <p className="text-xs font-black text-[#4A72C9] mb-1.5">[訪問] {s.label}</p>
+                    {status ? (
+                      <>
+                        <p className={`text-sm font-bold ${VISIT_STATUS_COLOR[status.status]}`}>
+                          ● {VISIT_STATUS_TEXT[status.status]}
+                        </p>
+                        {status.note && (
+                          <p className="text-xs text-gray-600 mt-1.5">対応可能エリア: {status.note}</p>
+                        )}
+                        {status.available_count !== null && status.available_count !== undefined && (
+                          <p className="text-xs text-gray-600 mt-1">現在対応可能な新規件数: {status.available_count}件</p>
+                        )}
+                        <p className="text-[11px] text-gray-500 mt-2">{VISIT_STATUS_NOTE}</p>
+                        <p className="text-[11px] font-bold text-gray-400 mt-1">
+                          更新: {formatUpdatedAtLong(status.updated_at)}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+
+        {/* ご相談の受付について（相談支援系を提供している場合のみ表示） */}
+        {facilityHasGroup(facility.offered_services, 'consultation') && (
+          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm space-y-4">
+            <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-orange-500" />
+              ご相談の受付について
+            </h2>
+
+            {SERVICE_TYPES_BY_GROUP.consultation
+              .filter((s) => facility.offered_services?.includes(s.id))
+              .map((s) => {
+                const status = getServiceStatus(s.id);
+                const consultationStatus = status?.status === 'full' ? 'full' : 'available';
+                return (
+                  <div key={s.id} className="bg-[#F3EEFB] p-4 rounded-xl border border-[#D9C7F0]">
+                    <p className="text-xs font-black text-[#8A5FC9] mb-1.5">[相談] {s.label}</p>
+                    {status ? (
+                      <>
+                        <p className={`text-sm font-bold ${CONSULTATION_STATUS_COLOR[consultationStatus]}`}>
+                          ● {CONSULTATION_STATUS_TEXT[consultationStatus]}
+                        </p>
+                        {status.note && (
+                          <p className="text-xs text-gray-600 mt-1.5">備考: {status.note}</p>
+                        )}
+                        <p className="text-[11px] text-gray-500 mt-2">{CONSULTATION_STATUS_NOTE}</p>
+                        <p className="text-[11px] font-bold text-gray-400 mt-1">
+                          更新: {formatUpdatedAtLong(status.updated_at)}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
 
         {/* お問い合わせフォーム */}
         <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm" id="inquiry-form">
@@ -452,7 +566,9 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">見学希望日時（第1〜3希望など）</label>
+              <label className="block font-bold text-gray-700 mb-1">
+                {isVisitOrConsultationOnly ? 'ご相談希望の日時（第1〜3希望など）' : '見学希望日時（第1〜3希望など）'}
+              </label>
               <input
                 type="text"
                 value={preferredDate}
@@ -479,7 +595,11 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-50"
             >
               <Send className="w-4 h-4" />
-              {isSubmitting ? '送信中...' : 'この内容で見学申し込み・チャットを開始'}
+              {isSubmitting
+                ? '送信中...'
+                : isVisitOrConsultationOnly
+                ? 'この内容でご相談・お問い合わせを送る'
+                : 'この内容で見学申し込み・チャットを開始'}
             </button>
           </form>
         </div>

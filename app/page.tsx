@@ -3,10 +3,10 @@
 import { useState, useEffect, useMemo } from 'react';
 // ★ Supabaseクライアントの参照元を @/utils/supabase/client に統一
 import { createClient } from '@/utils/supabase/client';
-import { Facility, Schedule } from '@/types';
+import { Facility, Schedule, FacilityServiceStatus } from '@/types';
 import {
   Search, MapPin, Phone, Clock, Car, Calendar,
-  Bookmark, Paperclip, Tag, LayoutGrid, List, ArrowUpDown, ChevronRight, MessageSquare, Lock, RotateCcw
+  Bookmark, Paperclip, Tag, LayoutGrid, List, ArrowUpDown, ChevronRight, MessageSquare, Lock, RotateCcw, HelpCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { User } from '@supabase/supabase-js';
@@ -16,10 +16,30 @@ import {
   isScheduleStale,
   STALE_SCHEDULE_NOTICE,
 } from '@/lib/scheduleFreshness';
+import {
+  SERVICE_TYPES,
+  SERVICE_TYPES_BY_GROUP,
+  GROUP_LABEL,
+  GROUP_OPTGROUP_LABEL,
+  SERVICE_DESCRIPTION,
+  getServiceGroup,
+  facilityHasGroup,
+  VISIT_STATUS_TEXT,
+  VISIT_STATUS_COLOR,
+  VISIT_STATUS_NOTE,
+  CONSULTATION_STATUS_TEXT,
+  CONSULTATION_STATUS_COLOR,
+  CONSULTATION_STATUS_NOTE,
+  SERVICE_STATUS_UNAVAILABLE_NOTICE,
+} from '@/lib/serviceTypes';
 
 export default function Home() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  // 訪問系・相談支援系の対応状況（facility_service_status）。
+  // 提案SQL(2026-08-27-facility-service-status.sql)が未適用の環境では取得に失敗するため、
+  // その場合は空配列のままにし「情報がありません」表示にフォールバックする(UXをブロックしない)。
+  const [serviceStatuses, setServiceStatuses] = useState<FacilityServiceStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ログインユーザーの状態を保持
@@ -29,6 +49,24 @@ export default function Home() {
   const [selectedService, setSelectedService] = useState<string>('all');
   const [selectedDay, setSelectedDay] = useState<string>('all');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
+
+  // サービス種別の(?)解説ポップオーバー開閉
+  const [showServiceInfo, setShowServiceInfo] = useState(false);
+
+  // 現在選択中サービスのグループ（訪問系・相談支援系選択時に曜日フィルタの見た目・挙動を変える）
+  const selectedGroup = selectedService === 'all' ? null : getServiceGroup(selectedService) ?? null;
+  const isDayFilterDisabled = selectedGroup === 'visit' || selectedGroup === 'consultation';
+
+  // サービス種別の変更ハンドラー。訪問系・相談支援系は曜日単位のデータを持たないため
+  // (代表決定事項2026-08-27: 訪問系の対応状況は曜日単位で持たない、全体で1つのステータスのみ)、
+  // それらを選んだ場合は曜日フィルタを無効化し、選べないのに値が残らないよう同時にリセットする。
+  const handleServiceChange = (value: string) => {
+    setSelectedService(value);
+    const group = value === 'all' ? null : getServiceGroup(value) ?? null;
+    if (group === 'visit' || group === 'consultation') {
+      setSelectedDay('all');
+    }
+  };
 
   // 表示切替・ソート用ステート
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -66,6 +104,22 @@ export default function Home() {
 
     if (facilitiesData) setFacilities(facilitiesData as Facility[]);
     if (schedulesData) setSchedules(schedulesData as Schedule[]);
+
+    // facility_service_status（提案SQL未適用の場合はテーブル自体が存在せずエラーになるため、
+    // その場合はエラーを握りつぶして空配列のまま扱う＝訪問系・相談支援系は「情報がありません」表示になる）
+    try {
+      const { data: statusData, error: statusError } = await supabase
+        .from('facility_service_status')
+        .select('*');
+      if (statusError) {
+        console.warn('facility_service_status取得エラー（未適用の可能性）:', statusError.message);
+      } else if (statusData) {
+        setServiceStatuses(statusData as FacilityServiceStatus[]);
+      }
+    } catch (e) {
+      console.warn('facility_service_status取得に失敗しました:', e);
+    }
+
     setLoading(false);
   };
 
@@ -91,6 +145,11 @@ export default function Home() {
   // 施設単位の最終更新日時（曜日×サービス単位のupdated_atのうち最新のもの）
   const getFacilityLastUpdatedAt = (facilityId: number) => {
     return getLatestUpdatedAt(schedules.filter((s) => s.facility_id === facilityId));
+  };
+
+  // 訪問系・相談支援系: 施設×サービス種別1件の対応状況を取得（データが無ければundefined）
+  const getServiceStatus = (facilityId: number, serviceType: string) => {
+    return serviceStatuses.find((s) => s.facility_id === facilityId && s.service_type === serviceType);
   };
 
   const processedFacilities = useMemo(() => {
@@ -239,31 +298,67 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-gray-600 mb-1">サービス種別</label>
+              <div className="relative">
+                <div className="flex items-center gap-1 mb-1">
+                  <label className="block text-[11px] font-bold text-gray-600">サービス種別</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowServiceInfo((v) => !v)}
+                    className="text-gray-400 hover:text-[#D96B85] transition-colors"
+                    aria-label="サービス種別の解説を表示"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <select
                   value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
+                  onChange={(e) => handleServiceChange(e.target.value)}
                   className="w-full px-3 py-2 bg-white border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-700 focus:outline-none focus:border-[#D96B85]"
                 >
                   <option value="all">すべてのサービス</option>
-                  <option value="after_school">放課後等デイサービス</option>
-                  <option value="developmental_support">児童発達支援</option>
+                  {(['commute', 'visit', 'consultation'] as const).map((group) => (
+                    <optgroup key={group} label={GROUP_OPTGROUP_LABEL[group]}>
+                      {SERVICE_TYPES_BY_GROUP[group].map((s) => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
+
+                {showServiceInfo && (
+                  <div className="absolute z-30 mt-1 w-72 max-w-[90vw] bg-white border-2 border-[#D8CEBF] rounded-xl shadow-lg p-3 space-y-2 text-[11px] text-gray-600">
+                    {SERVICE_TYPES.filter((s) => SERVICE_DESCRIPTION[s.id]).map((s) => (
+                      <p key={s.id}>
+                        <span className="font-black text-gray-800">{s.label}: </span>
+                        {SERVICE_DESCRIPTION[s.id]}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-gray-600 mb-1">空きのある曜日（◯・▲のみ）</label>
+                <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                  {selectedGroup === 'visit' ? '対応をご相談できる曜日' : '空きのある曜日（◯・▲のみ）'}
+                </label>
                 <select
                   value={selectedDay}
                   onChange={(e) => setSelectedDay(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-700 focus:outline-none focus:border-[#D96B85]"
+                  disabled={isDayFilterDisabled}
+                  className={`w-full px-3 py-2 bg-white border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-700 focus:outline-none focus:border-[#D96B85] ${
+                    isDayFilterDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''
+                  }`}
                 >
                   <option value="all">すべての曜日</option>
                   {days.map((d) => (
                     <option key={d} value={d}>{d}曜日</option>
                   ))}
                 </select>
+                {isDayFilterDisabled && (
+                  <p className="text-[10px] text-gray-400 font-bold mt-1">
+                    この種別は曜日での絞り込みができません
+                  </p>
+                )}
               </div>
 
               <div>
@@ -343,7 +438,13 @@ export default function Home() {
         ) : processedFacilities.length === 0 ? (
           <div className="bg-[#FAF8F5] rounded-2xl border-2 border-[#D8CEBF] p-8 text-center space-y-3">
             <p className="text-sm font-bold text-gray-600">該当するファイル（施設）が見つかりませんでした。</p>
-            <p className="text-xs text-gray-400">条件（曜日やサービス・フリーワード）を変更してお試しください。</p>
+            {selectedGroup === 'visit' || selectedGroup === 'consultation' ? (
+              <p className="text-xs text-gray-400">
+                「訪問」「ご相談」に対応する施設はまだ数が少ない場合があります。条件を広げてお試しください。
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400">条件（曜日やサービス・フリーワード）を変更してお試しください。</p>
+            )}
             {isFiltered && (
               <button
                 onClick={handleReset}
@@ -385,16 +486,15 @@ export default function Home() {
 
                   <div className="p-5 sm:p-6 space-y-4">
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {facility.offered_services?.includes('after_school') && (
-                        <span className="bg-[#FFF0F3] text-[#D96B85] text-[10px] font-black px-2.5 py-0.5 rounded-md border border-[#F8C3CE] shadow-xs">
-                          # 放課後等デイサービス
+                      {SERVICE_TYPES.filter((s) => facility.offered_services?.includes(s.id)).map((s) => (
+                        <span
+                          key={s.id}
+                          className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-md border shadow-xs ${s.colorClass}`}
+                        >
+                          <span className="opacity-70">[{GROUP_LABEL[s.group]}]</span>
+                          # {s.label}
                         </span>
-                      )}
-                      {facility.offered_services?.includes('developmental_support') && (
-                        <span className="bg-[#EAF7F4] text-[#2C9381] text-[10px] font-black px-2.5 py-0.5 rounded-md border border-[#A8DDD3] shadow-xs">
-                          # 児童発達支援
-                        </span>
-                      )}
+                      ))}
                     </div>
 
                     <h2 className="text-base sm:text-lg font-black text-gray-900 leading-snug border-b-2 border-dotted border-[#E5DDD0] pb-2">
@@ -428,70 +528,133 @@ export default function Home() {
                       )}
                     </div>
 
-                    <div className="pt-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-[#2C9381]" />
-                          <span className="text-[11px] font-black text-gray-700">週間空き状況シート</span>
+                    {facilityHasGroup(facility.offered_services, 'commute') && (
+                      <div className="pt-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-[#2C9381]" />
+                            <span className="text-[11px] font-black text-gray-700">週間空き状況シート</span>
+                          </div>
+                          {selectedDay !== 'all' && (
+                            <span className="text-[10px] text-[#2C9381] font-bold">
+                              {selectedDay}曜日を強調中
+                            </span>
+                          )}
                         </div>
-                        {selectedDay !== 'all' && (
-                          <span className="text-[10px] text-[#2C9381] font-bold">
-                            {selectedDay}曜日を強調中
-                          </span>
-                        )}
-                      </div>
 
-                      <div className="grid grid-cols-6 gap-1 bg-[#FFFEEF] p-2 rounded-xl border-2 border-[#E5DDD0] text-center shadow-inner">
-                        {days.map((day) => {
-                          const daySchedules = schedules.filter(
-                            (s) => s.facility_id === facility.id && 
-                                   s.day_of_week === day &&
-                                   (selectedService === 'all' || s.service_type === selectedService)
-                          );
-                          const isAvailable = daySchedules.some((s) => s.status === 'available');
-                          const isFew = daySchedules.some((s) => s.status === 'few');
-                          const isTargetDay = selectedDay === day;
+                        <div className="grid grid-cols-6 gap-1 bg-[#FFFEEF] p-2 rounded-xl border-2 border-[#E5DDD0] text-center shadow-inner">
+                          {days.map((day) => {
+                            const daySchedules = schedules.filter(
+                              (s) => s.facility_id === facility.id &&
+                                     s.day_of_week === day &&
+                                     (selectedService === 'all' || s.service_type === selectedService)
+                            );
+                            const isAvailable = daySchedules.some((s) => s.status === 'available');
+                            const isFew = daySchedules.some((s) => s.status === 'few');
+                            const isTargetDay = selectedDay === day;
 
+                            return (
+                              <div
+                                key={day}
+                                className={`space-y-0.5 p-1 rounded-lg transition-all ${
+                                  isTargetDay
+                                    ? 'bg-[#EAF7F4] border-2 border-[#2C9381] font-black shadow-2xs'
+                                    : ''
+                                }`}
+                              >
+                                <span className={`text-[10px] block border-b border-[#E5DDD0] pb-0.5 ${
+                                  isTargetDay ? 'text-[#2C9381] font-black' : 'text-gray-400 font-bold'
+                                }`}>
+                                  {day}
+                                </span>
+                                <div className="py-0.5 text-xs font-black leading-none">
+                                  {isAvailable ? (
+                                    <span className="text-emerald-600">◯</span>
+                                  ) : isFew ? (
+                                    <span className="text-amber-600">▲</span>
+                                  ) : (
+                                    <span className="text-gray-300">×</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {(() => {
+                          const lastUpdatedAt = getFacilityLastUpdatedAt(facility.id);
+                          if (!lastUpdatedAt) return null;
+                          const stale = isScheduleStale(lastUpdatedAt);
                           return (
-                            <div 
-                              key={day} 
-                              className={`space-y-0.5 p-1 rounded-lg transition-all ${
-                                isTargetDay 
-                                  ? 'bg-[#EAF7F4] border-2 border-[#2C9381] font-black shadow-2xs' 
-                                  : ''
-                              }`}
-                            >
-                              <span className={`text-[10px] block border-b border-[#E5DDD0] pb-0.5 ${
-                                isTargetDay ? 'text-[#2C9381] font-black' : 'text-gray-400 font-bold'
-                              }`}>
-                                {day}
-                              </span>
-                              <div className="py-0.5 text-xs font-black leading-none">
-                                {isAvailable ? (
-                                  <span className="text-emerald-600">◯</span>
-                                ) : isFew ? (
-                                  <span className="text-amber-600">▲</span>
+                            <p className={`text-[10px] font-bold mt-1.5 px-0.5 ${stale ? 'text-gray-500' : 'text-gray-400'}`}>
+                              最終更新: {formatUpdatedAtShort(lastUpdatedAt)}
+                              {stale && `。${STALE_SCHEDULE_NOTICE}`}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {facilityHasGroup(facility.offered_services, 'visit') && (
+                      <div className="pt-1 space-y-2">
+                        {SERVICE_TYPES_BY_GROUP.visit
+                          .filter((s) => facility.offered_services?.includes(s.id))
+                          .map((s) => {
+                            const status = getServiceStatus(facility.id, s.id);
+                            return (
+                              <div key={s.id} className="bg-[#EEF2FB] p-3 rounded-xl border-2 border-[#C7D5F0]">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-[10px] font-black text-[#4A72C9]">[訪問] {s.label}</span>
+                                </div>
+                                {status ? (
+                                  <>
+                                    <p className={`text-xs font-black ${VISIT_STATUS_COLOR[status.status]}`}>
+                                      ● {VISIT_STATUS_TEXT[status.status]}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 mt-1">{VISIT_STATUS_NOTE}</p>
+                                    <p className="text-[10px] font-bold text-gray-400 mt-1">
+                                      最終更新: {formatUpdatedAtShort(status.updated_at)}
+                                    </p>
+                                  </>
                                 ) : (
-                                  <span className="text-gray-300">×</span>
+                                  <p className="text-[11px] text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
                                 )}
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
                       </div>
+                    )}
 
-                      {(() => {
-                        const lastUpdatedAt = getFacilityLastUpdatedAt(facility.id);
-                        if (!lastUpdatedAt) return null;
-                        const stale = isScheduleStale(lastUpdatedAt);
-                        return (
-                          <p className={`text-[10px] font-bold mt-1.5 px-0.5 ${stale ? 'text-gray-500' : 'text-gray-400'}`}>
-                            最終更新: {formatUpdatedAtShort(lastUpdatedAt)}
-                            {stale && `。${STALE_SCHEDULE_NOTICE}`}
-                          </p>
-                        );
-                      })()}
-                    </div>
+                    {facilityHasGroup(facility.offered_services, 'consultation') && (
+                      <div className="pt-1">
+                        {SERVICE_TYPES_BY_GROUP.consultation
+                          .filter((s) => facility.offered_services?.includes(s.id))
+                          .map((s) => {
+                            const status = getServiceStatus(facility.id, s.id);
+                            const consultationStatus = status?.status === 'full' ? 'full' : 'available';
+                            return (
+                              <div key={s.id} className="bg-[#F3EEFB] p-3 rounded-xl border-2 border-[#D9C7F0]">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-[10px] font-black text-[#8A5FC9]">[相談] {s.label}</span>
+                                </div>
+                                {status ? (
+                                  <>
+                                    <p className={`text-xs font-black ${CONSULTATION_STATUS_COLOR[consultationStatus]}`}>
+                                      ● {CONSULTATION_STATUS_TEXT[consultationStatus]}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 mt-1">{CONSULTATION_STATUS_NOTE}</p>
+                                    <p className="text-[10px] font-bold text-gray-400 mt-1">
+                                      最終更新: {formatUpdatedAtShort(status.updated_at)}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <p className="text-[11px] text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
 
                   </div>
                 </div>
@@ -526,16 +689,14 @@ export default function Home() {
               >
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {facility.offered_services?.includes('after_school') && (
-                      <span className="bg-[#FFF0F3] text-[#D96B85] text-[10px] font-black px-2 py-0.5 rounded border border-[#F8C3CE]">
-                        放デイ
+                    {SERVICE_TYPES.filter((s) => facility.offered_services?.includes(s.id)).map((s) => (
+                      <span
+                        key={s.id}
+                        className={`text-[10px] font-black px-2 py-0.5 rounded border ${s.colorClass}`}
+                      >
+                        {s.shortLabel}
                       </span>
-                    )}
-                    {facility.offered_services?.includes('developmental_support') && (
-                      <span className="bg-[#EAF7F4] text-[#2C9381] text-[10px] font-black px-2 py-0.5 rounded border border-[#A8DDD3]">
-                        児発
-                      </span>
-                    )}
+                    ))}
                     {facility.has_pickup && (
                       <span className="bg-[#FAF8F5] text-[#2C9381] text-[10px] font-black px-2 py-0.5 rounded border border-[#E5DDD0] flex items-center gap-0.5">
                         <Car className="w-3 h-3" />
@@ -564,56 +725,82 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="bg-[#FFFEEF] px-2.5 py-1.5 rounded-xl border-2 border-[#E5DDD0] shrink-0 w-full md:w-auto">
-                  <div className="grid grid-cols-6 gap-1 text-center w-full">
-                    {days.map((day) => {
-                      const daySchedules = schedules.filter(
-                        (s) => s.facility_id === facility.id &&
-                               s.day_of_week === day &&
-                               (selectedService === 'all' || s.service_type === selectedService)
-                      );
-                      const isAvailable = daySchedules.some((s) => s.status === 'available');
-                      const isFew = daySchedules.some((s) => s.status === 'few');
-                      const isTargetDay = selectedDay === day;
+                {facilityHasGroup(facility.offered_services, 'commute') ? (
+                  <div className="bg-[#FFFEEF] px-2.5 py-1.5 rounded-xl border-2 border-[#E5DDD0] shrink-0 w-full md:w-auto">
+                    <div className="grid grid-cols-6 gap-1 text-center w-full">
+                      {days.map((day) => {
+                        const daySchedules = schedules.filter(
+                          (s) => s.facility_id === facility.id &&
+                                 s.day_of_week === day &&
+                                 (selectedService === 'all' || s.service_type === selectedService)
+                        );
+                        const isAvailable = daySchedules.some((s) => s.status === 'available');
+                        const isFew = daySchedules.some((s) => s.status === 'few');
+                        const isTargetDay = selectedDay === day;
 
+                        return (
+                          <div
+                            key={day}
+                            className={`flex flex-col items-center justify-center min-w-0 p-1 rounded-md transition-all ${
+                              isTargetDay ? 'bg-[#EAF7F4] border border-[#2C9381]' : ''
+                            }`}
+                          >
+                            <span className={`text-[10px] leading-none mb-1 ${
+                              isTargetDay ? 'text-[#2C9381] font-black' : 'text-gray-400 font-bold'
+                            }`}>
+                              {day}
+                            </span>
+                            <span className="text-xs font-black leading-none">
+                              {isAvailable ? (
+                                <span className="text-emerald-600">◯</span>
+                              ) : isFew ? (
+                                <span className="text-amber-600">▲</span>
+                              ) : (
+                                <span className="text-gray-300">×</span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {(() => {
+                      const lastUpdatedAt = getFacilityLastUpdatedAt(facility.id);
+                      if (!lastUpdatedAt) return null;
+                      const stale = isScheduleStale(lastUpdatedAt);
                       return (
-                        <div
-                          key={day}
-                          className={`flex flex-col items-center justify-center min-w-0 p-1 rounded-md transition-all ${
-                            isTargetDay ? 'bg-[#EAF7F4] border border-[#2C9381]' : ''
-                          }`}
-                        >
-                          <span className={`text-[10px] leading-none mb-1 ${
-                            isTargetDay ? 'text-[#2C9381] font-black' : 'text-gray-400 font-bold'
-                          }`}>
-                            {day}
-                          </span>
-                          <span className="text-xs font-black leading-none">
-                            {isAvailable ? (
-                              <span className="text-emerald-600">◯</span>
-                            ) : isFew ? (
-                              <span className="text-amber-600">▲</span>
-                            ) : (
-                              <span className="text-gray-300">×</span>
-                            )}
-                          </span>
-                        </div>
+                        <p className={`text-[10px] font-bold mt-1 text-center ${stale ? 'text-gray-500' : 'text-gray-400'}`}>
+                          最終更新: {formatUpdatedAtShort(lastUpdatedAt)}
+                          {stale && `。${STALE_SCHEDULE_NOTICE}`}
+                        </p>
                       );
-                    })}
+                    })()}
                   </div>
-
-                  {(() => {
-                    const lastUpdatedAt = getFacilityLastUpdatedAt(facility.id);
-                    if (!lastUpdatedAt) return null;
-                    const stale = isScheduleStale(lastUpdatedAt);
-                    return (
-                      <p className={`text-[10px] font-bold mt-1 text-center ${stale ? 'text-gray-500' : 'text-gray-400'}`}>
-                        最終更新: {formatUpdatedAtShort(lastUpdatedAt)}
-                        {stale && `。${STALE_SCHEDULE_NOTICE}`}
-                      </p>
-                    );
-                  })()}
-                </div>
+                ) : (
+                  <div className="bg-[#FAF8F5] px-3 py-2 rounded-xl border-2 border-[#E5DDD0] shrink-0 w-full md:w-auto md:max-w-[220px] space-y-1.5">
+                    {[...SERVICE_TYPES_BY_GROUP.visit, ...SERVICE_TYPES_BY_GROUP.consultation]
+                      .filter((s) => facility.offered_services?.includes(s.id))
+                      .map((s) => {
+                        const status = getServiceStatus(facility.id, s.id);
+                        const isConsultation = s.group === 'consultation';
+                        const text = !status
+                          ? SERVICE_STATUS_UNAVAILABLE_NOTICE
+                          : isConsultation
+                          ? CONSULTATION_STATUS_TEXT[status.status === 'full' ? 'full' : 'available']
+                          : VISIT_STATUS_TEXT[status.status];
+                        const colorClass = !status
+                          ? 'text-gray-400'
+                          : isConsultation
+                          ? CONSULTATION_STATUS_COLOR[status.status === 'full' ? 'full' : 'available']
+                          : VISIT_STATUS_COLOR[status.status];
+                        return (
+                          <p key={s.id} className={`text-[10px] font-bold leading-snug ${colorClass}`}>
+                            {s.shortLabel}: {text}
+                          </p>
+                        );
+                      })}
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2 shrink-0 pt-1 md:pt-0">
                   <a
