@@ -208,7 +208,13 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
     }
 
     // 2. 最初のメッセージ（お問い合わせ本文）の登録
-    const initialMessage = `【見学希望日時】\n${preferredDate || '指定なし'}\n\n【ご相談・お問い合わせ内容】\n${message || '特になし'}`;
+    // 画面表示ラベル（下記isVisitOrConsultationOnly、570行目付近）と同じ判定基準で、
+    // 送信本文の見出しも通所系提供の有無に応じて出し分ける(表示と送信内容の食い違い防止)。
+    const isVisitOrConsultationOnlyForMessage =
+      !facilityHasGroup(facility.offered_services, 'commute') &&
+      (facilityHasGroup(facility.offered_services, 'visit') || facilityHasGroup(facility.offered_services, 'consultation'));
+    const preferredDateLabel = isVisitOrConsultationOnlyForMessage ? 'ご相談希望日時' : '見学希望日時';
+    const initialMessage = `【${preferredDateLabel}】\n${preferredDate || '指定なし'}\n\n【ご相談・お問い合わせ内容】\n${message || '特になし'}`;
 
     const { error: msgError } = await supabaseClient.from('messages').insert({
       conversation_id: conv.id,

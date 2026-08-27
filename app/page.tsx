@@ -339,7 +339,7 @@ export default function Home() {
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                  {selectedGroup === 'visit' ? '対応をご相談できる曜日' : '空きのある曜日（◯・▲のみ）'}
+                  空きのある曜日（◯・▲のみ）
                 </label>
                 <select
                   value={selectedDay}
