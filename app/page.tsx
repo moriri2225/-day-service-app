@@ -19,7 +19,6 @@ import {
 import {
   SERVICE_TYPES,
   SERVICE_TYPES_BY_GROUP,
-  GROUP_LABEL,
   GROUP_OPTGROUP_LABEL,
   SERVICE_DESCRIPTION,
   getServiceGroup,
@@ -491,8 +490,7 @@ export default function Home() {
                           key={s.id}
                           className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-0.5 rounded-md border shadow-xs ${s.colorClass}`}
                         >
-                          <span className="opacity-70">[{GROUP_LABEL[s.group]}]</span>
-                          # {s.label}
+                          {s.label}
                         </span>
                       ))}
                     </div>
