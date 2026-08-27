@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 // ★ Supabaseクライアントの参照元を @/utils/supabase/client に統一
 import { createClient } from '@/utils/supabase/client';
-import { Facility, Schedule, FacilityServiceStatus } from '@/types';
+import { Facility, Schedule } from '@/types';
 import {
   Search, MapPin, Phone, Clock, Car, Calendar,
   Bookmark, Paperclip, Tag, LayoutGrid, List, ArrowUpDown, ChevronRight, MessageSquare, Lock, RotateCcw, HelpCircle
@@ -23,22 +23,11 @@ import {
   SERVICE_DESCRIPTION,
   getServiceGroup,
   facilityHasGroup,
-  VISIT_STATUS_TEXT,
-  VISIT_STATUS_COLOR,
-  VISIT_STATUS_NOTE,
-  CONSULTATION_STATUS_TEXT,
-  CONSULTATION_STATUS_COLOR,
-  CONSULTATION_STATUS_NOTE,
-  SERVICE_STATUS_UNAVAILABLE_NOTICE,
 } from '@/lib/serviceTypes';
 
 export default function Home() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  // 訪問系・相談支援系の対応状況（facility_service_status）。
-  // 提案SQL(2026-08-27-facility-service-status.sql)が未適用の環境では取得に失敗するため、
-  // その場合は空配列のままにし「情報がありません」表示にフォールバックする(UXをブロックしない)。
-  const [serviceStatuses, setServiceStatuses] = useState<FacilityServiceStatus[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ログインユーザーの状態を保持
@@ -104,21 +93,6 @@ export default function Home() {
     if (facilitiesData) setFacilities(facilitiesData as Facility[]);
     if (schedulesData) setSchedules(schedulesData as Schedule[]);
 
-    // facility_service_status（提案SQL未適用の場合はテーブル自体が存在せずエラーになるため、
-    // その場合はエラーを握りつぶして空配列のまま扱う＝訪問系・相談支援系は「情報がありません」表示になる）
-    try {
-      const { data: statusData, error: statusError } = await supabase
-        .from('facility_service_status')
-        .select('*');
-      if (statusError) {
-        console.warn('facility_service_status取得エラー（未適用の可能性）:', statusError.message);
-      } else if (statusData) {
-        setServiceStatuses(statusData as FacilityServiceStatus[]);
-      }
-    } catch (e) {
-      console.warn('facility_service_status取得に失敗しました:', e);
-    }
-
     setLoading(false);
   };
 
@@ -144,11 +118,6 @@ export default function Home() {
   // 施設単位の最終更新日時（曜日×サービス単位のupdated_atのうち最新のもの）
   const getFacilityLastUpdatedAt = (facilityId: number) => {
     return getLatestUpdatedAt(schedules.filter((s) => s.facility_id === facilityId));
-  };
-
-  // 訪問系・相談支援系: 施設×サービス種別1件の対応状況を取得（データが無ければundefined）
-  const getServiceStatus = (facilityId: number, serviceType: string) => {
-    return serviceStatuses.find((s) => s.facility_id === facilityId && s.service_type === serviceType);
   };
 
   const processedFacilities = useMemo(() => {
@@ -593,67 +562,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {facilityHasGroup(facility.offered_services, 'visit') && (
-                      <div className="pt-1 space-y-2">
-                        {SERVICE_TYPES_BY_GROUP.visit
-                          .filter((s) => facility.offered_services?.includes(s.id))
-                          .map((s) => {
-                            const status = getServiceStatus(facility.id, s.id);
-                            return (
-                              <div key={s.id} className="bg-[#EEF2FB] p-3 rounded-xl border-2 border-[#C7D5F0]">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <span className="text-[10px] font-black text-[#4A72C9]">[訪問] {s.label}</span>
-                                </div>
-                                {status ? (
-                                  <>
-                                    <p className={`text-xs font-black ${VISIT_STATUS_COLOR[status.status]}`}>
-                                      ● {VISIT_STATUS_TEXT[status.status]}
-                                    </p>
-                                    <p className="text-[10px] text-gray-500 mt-1">{VISIT_STATUS_NOTE}</p>
-                                    <p className="text-[10px] font-bold text-gray-400 mt-1">
-                                      最終更新: {formatUpdatedAtShort(status.updated_at)}
-                                    </p>
-                                  </>
-                                ) : (
-                                  <p className="text-[11px] text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    )}
-
-                    {facilityHasGroup(facility.offered_services, 'consultation') && (
-                      <div className="pt-1">
-                        {SERVICE_TYPES_BY_GROUP.consultation
-                          .filter((s) => facility.offered_services?.includes(s.id))
-                          .map((s) => {
-                            const status = getServiceStatus(facility.id, s.id);
-                            const consultationStatus = status?.status === 'full' ? 'full' : 'available';
-                            return (
-                              <div key={s.id} className="bg-[#F3EEFB] p-3 rounded-xl border-2 border-[#D9C7F0]">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <span className="text-[10px] font-black text-[#8A5FC9]">[相談] {s.label}</span>
-                                </div>
-                                {status ? (
-                                  <>
-                                    <p className={`text-xs font-black ${CONSULTATION_STATUS_COLOR[consultationStatus]}`}>
-                                      ● {CONSULTATION_STATUS_TEXT[consultationStatus]}
-                                    </p>
-                                    <p className="text-[10px] text-gray-500 mt-1">{CONSULTATION_STATUS_NOTE}</p>
-                                    <p className="text-[10px] font-bold text-gray-400 mt-1">
-                                      最終更新: {formatUpdatedAtShort(status.updated_at)}
-                                    </p>
-                                  </>
-                                ) : (
-                                  <p className="text-[11px] text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    )}
-
                   </div>
                 </div>
 
@@ -723,7 +631,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {facilityHasGroup(facility.offered_services, 'commute') ? (
+                {facilityHasGroup(facility.offered_services, 'commute') && (
                   <div className="bg-[#FFFEEF] px-2.5 py-1.5 rounded-xl border-2 border-[#E5DDD0] shrink-0 w-full md:w-auto">
                     <div className="grid grid-cols-6 gap-1 text-center w-full">
                       {days.map((day) => {
@@ -773,30 +681,6 @@ export default function Home() {
                         </p>
                       );
                     })()}
-                  </div>
-                ) : (
-                  <div className="bg-[#FAF8F5] px-3 py-2 rounded-xl border-2 border-[#E5DDD0] shrink-0 w-full md:w-auto md:max-w-[220px] space-y-1.5">
-                    {[...SERVICE_TYPES_BY_GROUP.visit, ...SERVICE_TYPES_BY_GROUP.consultation]
-                      .filter((s) => facility.offered_services?.includes(s.id))
-                      .map((s) => {
-                        const status = getServiceStatus(facility.id, s.id);
-                        const isConsultation = s.group === 'consultation';
-                        const text = !status
-                          ? SERVICE_STATUS_UNAVAILABLE_NOTICE
-                          : isConsultation
-                          ? CONSULTATION_STATUS_TEXT[status.status === 'full' ? 'full' : 'available']
-                          : VISIT_STATUS_TEXT[status.status];
-                        const colorClass = !status
-                          ? 'text-gray-400'
-                          : isConsultation
-                          ? CONSULTATION_STATUS_COLOR[status.status === 'full' ? 'full' : 'available']
-                          : VISIT_STATUS_COLOR[status.status];
-                        return (
-                          <p key={s.id} className={`text-[10px] font-bold leading-snug ${colorClass}`}>
-                            {s.shortLabel}: {text}
-                          </p>
-                        );
-                      })}
                   </div>
                 )}
 

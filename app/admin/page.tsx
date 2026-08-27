@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Facility, Schedule, FacilityServiceStatus } from '@/types';
+import { Facility, Schedule } from '@/types';
 import {
   Building2, Calendar, Save, ArrowLeft, RefreshCw, Sparkles, AlertCircle, Edit3, Image, MapPin, Phone, Clock, FileText, Car, Plus, ChevronDown, ChevronUp, Lock, MessageSquare
 } from 'lucide-react';
@@ -15,19 +15,6 @@ const DAYS = ['月', '火', '水', '木', '金', '土'];
 // 通所系（既存の曜日×○/▲/×グリッドで管理する2種別）
 const SERVICES = SERVICE_TYPES_BY_GROUP.commute.map((s) => ({ id: s.id, label: s.label, color: s.colorClass }));
 
-// 訪問系の全体対応状況の3択ボタン定義（既存の曜日グリッドのボタン見た目を流用）
-const VISIT_STATUS_OPTIONS: Array<{ value: 'available' | 'few' | 'full'; label: string }> = [
-  { value: 'available', label: '◯ 対応相談を受付中' },
-  { value: 'few', label: '▲ 混み合っています' },
-  { value: 'full', label: '× 新規停止中' },
-];
-
-// 相談支援系の受付状況の2択ボタン定義
-const CONSULTATION_STATUS_OPTIONS: Array<{ value: 'available' | 'full'; label: string }> = [
-  { value: 'available', label: '◯ 受付中' },
-  { value: 'full', label: '× 一時停止中' },
-];
-
 export default function AdminPage() {
   const router = useRouter();
 
@@ -37,14 +24,8 @@ export default function AdminPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   // DB取得時点のスケジュール（差分検出用。保存時にこれと比較し、実際に変更された行だけをupsertする）
   const [savedSchedules, setSavedSchedules] = useState<Schedule[]>([]);
-  // 訪問系・相談支援系の対応状況（曜日単位を持たない、施設×サービス種別で1レコード）
-  const [serviceStatuses, setServiceStatuses] = useState<FacilityServiceStatus[]>([]);
-  const [savedServiceStatuses, setSavedServiceStatuses] = useState<FacilityServiceStatus[]>([]);
-  // facility_service_statusテーブルが未適用の環境かどうか（未適用ならこのセクションの保存を諦め、案内文だけ出す）
-  const [serviceStatusTableUnavailable, setServiceStatusTableUnavailable] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [savingSchedule, setSavingSchedule] = useState<boolean>(false);
-  const [savingServiceStatus, setSavingServiceStatus] = useState<boolean>(false);
   const [savingFacility, setSavingFacility] = useState<boolean>(false);
   const [creatingFacility, setCreatingFacility] = useState<boolean>(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -130,7 +111,6 @@ export default function AdminPage() {
       setSelectedFacilityId(firstFac.id);
       initFacilityForm(firstFac);
       await fetchSchedules(firstFac.id);
-      await fetchServiceStatuses(firstFac.id);
     }
     setLoading(false);
   };
@@ -167,127 +147,6 @@ export default function AdminPage() {
     setSavedSchedules(fetched);
   };
 
-  // 選択された施設の訪問系・相談支援系対応状況を取得
-  // (提案SQL 2026-08-27-facility-service-status.sql が未適用の環境ではテーブル自体が
-  //  存在せずエラーになるため、その場合は編集不可の案内表示にフォールバックする)
-  const fetchServiceStatuses = async (facilityId: number) => {
-    const { data, error } = await supabase
-      .from('facility_service_status')
-      .select('*')
-      .eq('facility_id', facilityId);
-
-    if (error) {
-      console.warn('facility_service_status取得エラー（未適用の可能性）:', error.message);
-      setServiceStatusTableUnavailable(true);
-      setServiceStatuses([]);
-      setSavedServiceStatuses([]);
-      return;
-    }
-
-    setServiceStatusTableUnavailable(false);
-    const fetched = (data as FacilityServiceStatus[]) || [];
-    setServiceStatuses(fetched);
-    setSavedServiceStatuses(fetched);
-  };
-
-  // 特定サービス種別の対応状況を取得（未存在ならデフォルト値）
-  const getServiceStatusForm = (serviceType: string): { status: 'available' | 'few' | 'full'; available_count: number | null; note: string | null } => {
-    const item = serviceStatuses.find((s) => s.service_type === serviceType);
-    return {
-      status: item?.status || 'available',
-      available_count: item?.available_count ?? null,
-      note: item?.note ?? null,
-    };
-  };
-
-  // ローカルステートでの対応状況変更（未存在なら新規行として追加）
-  const handleServiceStatusChange = (
-    serviceType: string,
-    changes: Partial<Pick<FacilityServiceStatus, 'status' | 'available_count' | 'note'>>
-  ) => {
-    setServiceStatuses((prev) => {
-      const existingIndex = prev.findIndex((s) => s.service_type === serviceType);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = { ...updated[existingIndex], ...changes };
-        return updated;
-      }
-      return [
-        ...prev,
-        {
-          id: Date.now(),
-          facility_id: selectedFacilityId!,
-          service_type: serviceType,
-          status: 'available',
-          available_count: null,
-          note: null,
-          updated_at: new Date().toISOString(),
-          ...changes,
-        } as FacilityServiceStatus,
-      ];
-    });
-  };
-
-  // 訪問系・相談支援系の対応状況の一括保存（変更があった行だけをupsert）
-  const handleSaveServiceStatuses = async () => {
-    if (!selectedFacilityId) return;
-
-    setSavingServiceStatus(true);
-    setMessage(null);
-
-    const currentFacility = facilities.find((f) => f.id === selectedFacilityId);
-    const targetServiceTypes = [...SERVICE_TYPES_BY_GROUP.visit, ...SERVICE_TYPES_BY_GROUP.consultation]
-      .map((s) => s.id)
-      .filter((id) => currentFacility?.offered_services?.includes(id));
-
-    const upsertData: Array<{ facility_id: number; service_type: string; status: string; available_count: number | null; note: string | null; updated_at: string }> = [];
-
-    targetServiceTypes.forEach((serviceType) => {
-      const current = getServiceStatusForm(serviceType);
-      const saved = savedServiceStatuses.find((s) => s.service_type === serviceType);
-      const savedForm = {
-        status: saved?.status || 'available',
-        available_count: saved?.available_count ?? null,
-        note: saved?.note ?? null,
-      };
-
-      const changed =
-        current.status !== savedForm.status ||
-        current.available_count !== savedForm.available_count ||
-        (current.note || '') !== (savedForm.note || '');
-      if (!changed) return;
-
-      upsertData.push({
-        facility_id: selectedFacilityId,
-        service_type: serviceType,
-        status: current.status,
-        available_count: current.available_count,
-        note: current.note,
-        updated_at: new Date().toISOString(),
-      });
-    });
-
-    if (upsertData.length === 0) {
-      setSavingServiceStatus(false);
-      setMessage({ type: 'success', text: '対応状況に変更がなかったため、保存をスキップしました。' });
-      return;
-    }
-
-    const { error } = await supabase
-      .from('facility_service_status')
-      .upsert(upsertData, { onConflict: 'facility_id,service_type' });
-
-    setSavingServiceStatus(false);
-
-    if (error) {
-      console.error('対応状況の保存に失敗しました:', error);
-      setMessage({ type: 'error', text: '訪問・相談支援の対応状況の保存に失敗しました。' });
-    } else {
-      setMessage({ type: 'success', text: '対応状況を正常に保存・更新しました！' });
-      fetchServiceStatuses(selectedFacilityId);
-    }
-  };
-
   // 施設切替ハンドラー
   const handleFacilityChange = async (facilityId: number) => {
     setSelectedFacilityId(facilityId);
@@ -300,7 +159,6 @@ export default function AdminPage() {
     }
 
     await fetchSchedules(facilityId);
-    await fetchServiceStatuses(facilityId);
     setLoading(false);
   };
 
@@ -506,7 +364,6 @@ export default function AdminPage() {
       setSelectedFacilityId(createdFac.id);
       initFacilityForm(createdFac);
       await fetchSchedules(createdFac.id);
-      await fetchServiceStatuses(createdFac.id);
 
       setNewFacilityForm({
         name: '',
@@ -868,158 +725,6 @@ export default function AdminPage() {
                     </button>
                   </div>
 
-                  {/* 訪問系: 全体の対応状況（曜日単位は持たない。3択+件数任意+自由記述） */}
-                  {SERVICE_TYPES_BY_GROUP.visit
-                    .filter((service) => selectedFacility.offered_services?.includes(service.id))
-                    .map((service) => {
-                      const form = getServiceStatusForm(service.id);
-                      return (
-                        <div key={service.id} className="bg-white p-4 sm:p-6 rounded-2xl border-2 border-[#E5DDD0] space-y-3">
-                          <span className="text-xs font-black px-3 py-1 rounded-lg border bg-[#EEF2FB] text-[#4A72C9] border-[#C7D5F0]">
-                            [訪問] {service.label}
-                          </span>
-
-                          {serviceStatusTableUnavailable ? (
-                            <p className="text-xs text-gray-500 bg-[#FAF8F5] p-3 rounded-xl border border-[#E5DDD0]">
-                              対応状況の保存機能はまだ利用できません（データベースの準備が完了次第、有効になります）。
-                            </p>
-                          ) : (
-                            <>
-                              <div>
-                                <p className="text-[11px] font-bold text-gray-500 mb-1.5">全体の対応状況</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {VISIT_STATUS_OPTIONS.map((opt) => (
-                                    <button
-                                      key={opt.value}
-                                      type="button"
-                                      onClick={() => handleServiceStatusChange(service.id, { status: opt.value })}
-                                      className={`px-3 py-1.5 rounded-lg text-xs font-black border transition-all ${
-                                        form.status === opt.value
-                                          ? 'bg-[#4A72C9] text-white border-[#3A5FAE] shadow-xs scale-105'
-                                          : 'bg-white text-gray-600 border-gray-200 hover:bg-[#EEF2FB]'
-                                      }`}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-1.5">
-                                  日々の空き枠ではなく、新規のご相談を受けられるかどうかの状況です
-                                </p>
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-bold text-gray-500 mb-1">現在対応可能な新規件数（任意）</label>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={form.available_count ?? ''}
-                                  onChange={(e) =>
-                                    handleServiceStatusChange(service.id, {
-                                      available_count: e.target.value === '' ? null : Number(e.target.value),
-                                    })
-                                  }
-                                  placeholder="例: 2"
-                                  className="w-32 px-3 py-1.5 bg-[#FAF8F5] border-2 border-[#E5DDD0] rounded-lg text-xs font-bold text-gray-800 focus:outline-none focus:border-[#4A72C9]"
-                                />
-                                <span className="text-xs text-gray-500 ml-1.5">件</span>
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-bold text-gray-500 mb-1">対応可能エリア・特記事項（任意）</label>
-                                <textarea
-                                  rows={2}
-                                  maxLength={500}
-                                  value={form.note ?? ''}
-                                  onChange={(e) => handleServiceStatusChange(service.id, { note: e.target.value })}
-                                  placeholder="例: 渋谷区・目黒区周辺"
-                                  className="w-full px-3 py-2 bg-[#FAF8F5] border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-[#4A72C9]"
-                                />
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                  {/* 相談支援系: 受付状況（2択+自由記述のみ） */}
-                  {SERVICE_TYPES_BY_GROUP.consultation
-                    .filter((service) => selectedFacility.offered_services?.includes(service.id))
-                    .map((service) => {
-                      const form = getServiceStatusForm(service.id);
-                      const consultationStatus: 'available' | 'full' = form.status === 'full' ? 'full' : 'available';
-                      return (
-                        <div key={service.id} className="bg-white p-4 sm:p-6 rounded-2xl border-2 border-[#E5DDD0] space-y-3">
-                          <span className="text-xs font-black px-3 py-1 rounded-lg border bg-[#F3EEFB] text-[#8A5FC9] border-[#D9C7F0]">
-                            [相談] {service.label}
-                          </span>
-
-                          {serviceStatusTableUnavailable ? (
-                            <p className="text-xs text-gray-500 bg-[#FAF8F5] p-3 rounded-xl border border-[#E5DDD0]">
-                              対応状況の保存機能はまだ利用できません（データベースの準備が完了次第、有効になります）。
-                            </p>
-                          ) : (
-                            <>
-                              <div>
-                                <p className="text-[11px] font-bold text-gray-500 mb-1.5">受付状況</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {CONSULTATION_STATUS_OPTIONS.map((opt) => (
-                                    <button
-                                      key={opt.value}
-                                      type="button"
-                                      onClick={() => handleServiceStatusChange(service.id, { status: opt.value })}
-                                      className={`px-3 py-1.5 rounded-lg text-xs font-black border transition-all ${
-                                        consultationStatus === opt.value
-                                          ? 'bg-[#8A5FC9] text-white border-[#6F4AAE] shadow-xs scale-105'
-                                          : 'bg-white text-gray-600 border-gray-200 hover:bg-[#F3EEFB]'
-                                      }`}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-bold text-gray-500 mb-1">受付にあたっての備考（任意）</label>
-                                <textarea
-                                  rows={2}
-                                  maxLength={500}
-                                  value={form.note ?? ''}
-                                  onChange={(e) => handleServiceStatusChange(service.id, { note: e.target.value })}
-                                  placeholder="例: 現在担当できる相談支援専門員が1名のため、対応まで1〜2週間お待ちいただく場合があります"
-                                  className="w-full px-3 py-2 bg-[#FAF8F5] border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-[#8A5FC9]"
-                                />
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                  {!serviceStatusTableUnavailable &&
-                    (SERVICE_TYPES_BY_GROUP.visit.some((s) => selectedFacility.offered_services?.includes(s.id)) ||
-                      SERVICE_TYPES_BY_GROUP.consultation.some((s) => selectedFacility.offered_services?.includes(s.id))) && (
-                      <div className="pt-1 flex justify-end">
-                        <button
-                          onClick={handleSaveServiceStatuses}
-                          disabled={savingServiceStatus}
-                          className="w-full sm:w-auto px-6 py-3 bg-[#4A72C9] hover:bg-[#3A5FAE] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
-                        >
-                          {savingServiceStatus ? (
-                            <>
-                              <RefreshCw className="w-4 h-4 animate-spin" />
-                              保存中...
-                            </>
-                          ) : (
-                            <>
-                              <Save className="w-4 h-4" />
-                              訪問・相談支援の対応状況を保存する
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
                 </div>
               )}
 

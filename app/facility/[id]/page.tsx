@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { isLocalBookmarked, toggleLocalBookmark } from '@/lib/storage';
-import { Facility, Schedule, FacilityServiceStatus } from '@/types';
+import { Facility, Schedule } from '@/types';
 import {
   getLatestUpdatedAt,
   formatUpdatedAtLong,
@@ -18,14 +18,8 @@ import {
 } from '@/lib/scheduleFreshness';
 import {
   SERVICE_TYPES_BY_GROUP,
+  SERVICE_DESCRIPTION,
   facilityHasGroup,
-  VISIT_STATUS_TEXT,
-  VISIT_STATUS_COLOR,
-  VISIT_STATUS_NOTE,
-  CONSULTATION_STATUS_TEXT,
-  CONSULTATION_STATUS_COLOR,
-  CONSULTATION_STATUS_NOTE,
-  SERVICE_STATUS_UNAVAILABLE_NOTICE,
 } from '@/lib/serviceTypes';
 
 interface ChildInfo {
@@ -40,7 +34,6 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
   const [facilityId, setFacilityId] = useState<number | null>(null);
   const [facility, setFacility] = useState<Facility | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [serviceStatuses, setServiceStatuses] = useState<FacilityServiceStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
@@ -140,27 +133,8 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
       setSchedules(scheduleData);
     }
 
-    // 訪問系・相談支援系の対応状況（提案SQL未適用の環境ではエラーになるため、
-    // その場合は握りつぶして空配列のまま扱う＝「情報がありません」表示にフォールバック）
-    try {
-      const { data: statusData, error: statusError } = await supabaseClient
-        .from('facility_service_status')
-        .select('*')
-        .eq('facility_id', id);
-      if (statusError) {
-        console.warn('facility_service_status取得エラー（未適用の可能性）:', statusError.message);
-      } else if (statusData) {
-        setServiceStatuses(statusData as FacilityServiceStatus[]);
-      }
-    } catch (e) {
-      console.warn('facility_service_status取得に失敗しました:', e);
-    }
-
     setLoading(false);
   };
-
-  const getServiceStatus = (serviceType: string) =>
-    serviceStatuses.find((s) => s.service_type === serviceType);
 
   const handleToggleBookmark = () => {
     if (facilityId === null) return;
@@ -393,81 +367,41 @@ export default function FacilityDetailPage({ params }: { params: { id: string } 
           </div>
         )}
 
-        {/* 訪問サービスの対応状況（訪問系を1つでも提供している場合のみ表示） */}
+        {/* 訪問サービス（訪問系を1つでも提供している場合のみ表示） */}
         {facilityHasGroup(facility.offered_services, 'visit') && (
-          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm space-y-4">
+          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm space-y-3">
             <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
               <Calendar className="w-5 h-5 text-orange-500" />
-              訪問サービスの対応状況について
+              訪問サービス
             </h2>
 
             {SERVICE_TYPES_BY_GROUP.visit
               .filter((s) => facility.offered_services?.includes(s.id))
-              .map((s) => {
-                const status = getServiceStatus(s.id);
-                return (
-                  <div key={s.id} className="bg-[#EEF2FB] p-4 rounded-xl border border-[#C7D5F0]">
-                    <p className="text-xs font-black text-[#4A72C9] mb-1.5">[訪問] {s.label}</p>
-                    {status ? (
-                      <>
-                        <p className={`text-sm font-bold ${VISIT_STATUS_COLOR[status.status]}`}>
-                          ● {VISIT_STATUS_TEXT[status.status]}
-                        </p>
-                        {status.note && (
-                          <p className="text-xs text-gray-600 mt-1.5">対応可能エリア: {status.note}</p>
-                        )}
-                        {status.available_count !== null && status.available_count !== undefined && (
-                          <p className="text-xs text-gray-600 mt-1">現在対応可能な新規件数: {status.available_count}件</p>
-                        )}
-                        <p className="text-[11px] text-gray-500 mt-2">{VISIT_STATUS_NOTE}</p>
-                        <p className="text-[11px] font-bold text-gray-400 mt-1">
-                          更新: {formatUpdatedAtLong(status.updated_at)}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
-                    )}
-                  </div>
-                );
-              })}
+              .map((s) => (
+                <div key={s.id} className="bg-[#EEF2FB] p-4 rounded-xl border border-[#C7D5F0]">
+                  <p className="text-xs font-black text-[#4A72C9] mb-1">[訪問] {s.label}</p>
+                  <p className="text-xs text-gray-600">このサービスを提供しています。{SERVICE_DESCRIPTION[s.id]}</p>
+                </div>
+              ))}
           </div>
         )}
 
-        {/* ご相談の受付について（相談支援系を提供している場合のみ表示） */}
+        {/* 相談支援サービス（相談支援系を提供している場合のみ表示） */}
         {facilityHasGroup(facility.offered_services, 'consultation') && (
-          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm space-y-4">
+          <div className="bg-white rounded-2xl p-6 border border-orange-100 shadow-sm space-y-3">
             <h2 className="text-base font-bold text-gray-800 mb-1 flex items-center gap-2">
               <Calendar className="w-5 h-5 text-orange-500" />
-              ご相談の受付について
+              相談支援サービス
             </h2>
 
             {SERVICE_TYPES_BY_GROUP.consultation
               .filter((s) => facility.offered_services?.includes(s.id))
-              .map((s) => {
-                const status = getServiceStatus(s.id);
-                const consultationStatus = status?.status === 'full' ? 'full' : 'available';
-                return (
-                  <div key={s.id} className="bg-[#F3EEFB] p-4 rounded-xl border border-[#D9C7F0]">
-                    <p className="text-xs font-black text-[#8A5FC9] mb-1.5">[相談] {s.label}</p>
-                    {status ? (
-                      <>
-                        <p className={`text-sm font-bold ${CONSULTATION_STATUS_COLOR[consultationStatus]}`}>
-                          ● {CONSULTATION_STATUS_TEXT[consultationStatus]}
-                        </p>
-                        {status.note && (
-                          <p className="text-xs text-gray-600 mt-1.5">備考: {status.note}</p>
-                        )}
-                        <p className="text-[11px] text-gray-500 mt-2">{CONSULTATION_STATUS_NOTE}</p>
-                        <p className="text-[11px] font-bold text-gray-400 mt-1">
-                          更新: {formatUpdatedAtLong(status.updated_at)}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-gray-500">{SERVICE_STATUS_UNAVAILABLE_NOTICE}</p>
-                    )}
-                  </div>
-                );
-              })}
+              .map((s) => (
+                <div key={s.id} className="bg-[#F3EEFB] p-4 rounded-xl border border-[#D9C7F0]">
+                  <p className="text-xs font-black text-[#8A5FC9] mb-1">[相談] {s.label}</p>
+                  <p className="text-xs text-gray-600">このサービスを提供しています。{SERVICE_DESCRIPTION[s.id]}</p>
+                </div>
+              ))}
           </div>
         )}
 

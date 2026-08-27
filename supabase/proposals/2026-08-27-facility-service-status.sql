@@ -1,3 +1,7 @@
+-- 2026-08-27: 代表決定によりステータス管理機能自体を撤回したため、本提案SQLは適用不要。
+-- (訪問系・相談支援系は「事業所情報+問い合わせ」のみのシンプル仕様に変更。詳細は
+--  outputs/kakehashi-project/2026-08-27-visit-consultation-simplify-yua.md を参照)
+--
 -- 提案SQL: 訪問系2種別・相談支援系1種別の対応状況テーブル新設
 -- 起票: PRD開発部 ゆうあ / 2026-08-27
 -- 元設計: outputs/kakehashi-project/2026-08-27-ux-design-4-3-honoka.md 3〜5章

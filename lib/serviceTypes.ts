@@ -87,35 +87,3 @@ export const facilityHasGroup = (offeredServices: string[] | undefined | null, g
   if (!offeredServices) return false;
   return offeredServices.some((id) => getServiceGroup(id) === group);
 };
-
-// 訪問系・相談支援系の対応状況表示文言（設計書6章のマイクロコピーをそのまま採用）
-export const VISIT_STATUS_TEXT: Record<'available' | 'few' | 'full', string> = {
-  available: '対応相談を受付中',
-  few: '混み合っており、ご案内までお時間をいただく場合があります',
-  full: '新規のご相談は一時停止中',
-};
-
-export const VISIT_STATUS_COLOR: Record<'available' | 'few' | 'full', string> = {
-  available: 'text-emerald-600',
-  few: 'text-amber-600',
-  full: 'text-gray-400',
-};
-
-export const VISIT_STATUS_NOTE =
-  '「対応状況」は施設の混み具合の目安です。ご利用の可否は施設に直接ご確認ください。';
-
-export const CONSULTATION_STATUS_TEXT: Record<'available' | 'full', string> = {
-  available: '現在、新しいご相談を受け付けています',
-  full: '現在、新規のご相談受付を一時的にお休みしています',
-};
-
-export const CONSULTATION_STATUS_COLOR: Record<'available' | 'full', string> = {
-  available: 'text-emerald-600',
-  full: 'text-gray-400',
-};
-
-export const CONSULTATION_STATUS_NOTE =
-  'ご利用には手続きが必要な場合があります。詳しくは施設にお問い合わせください。';
-
-// facility_service_statusテーブルがまだ未適用の環境向け：取得失敗時にUIをブロックしないための文言
-export const SERVICE_STATUS_UNAVAILABLE_NOTICE = '現在、対応状況の情報がありません。施設に直接お問い合わせください。';
