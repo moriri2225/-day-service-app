@@ -108,7 +108,7 @@ function AdminLoginFormContent() {
       // 3. facilitiesテーブルにowner_id付きで自施設を新規作成
       const { error: facilityError } = await supabase.from('facilities').insert({
         name: facilityName,
-        address: address || null,
+        address,
         phone_number: phoneNumber || null,
         owner_id: user.id,
       })
@@ -266,11 +266,12 @@ function AdminLoginFormContent() {
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    住所（任意）
+                    住所 <span className="text-red-500">*</span>
                   </label>
                   <div className="mt-1">
                     <input
                       type="text"
+                      required
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm"
