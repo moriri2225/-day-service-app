@@ -8,17 +8,13 @@
 -- ゆうあ自身はテーブル作成権限(service_role等)を持たない。
 -- 代表がSupabaseダッシュボード(SQL Editor)で内容を確認の上、適用すること。
 --
--- 型の確定について: facilities.id の型はこのリポジトリからは直接確認できない
--- (マイグレーションファイル・スキーマ定義ファイルがリポジトリ内に存在しないため)。
--- types/index.ts の Facility.id / Schedule.facility_id が number 型であること、
--- および設計書2章がその前提で書かれていることから bigint と判断し、
--- organization_members.facility_id / 関数引数を bigint で統一した。
--- 【代表・PM確認事項】適用前に、Supabaseダッシュボードで
+-- 型の確定について: 代表がSupabaseダッシュボード(SQL Editor)で
 --   select column_name, data_type from information_schema.columns
 --   where table_name = 'facilities' and column_name = 'id';
--- を実行し、実際の型が bigint (int8) であることを確認してください。
--- もし uuid 等の別型だった場合、本ファイルおよび backfill/rls の両ファイルの
--- bigint 指定を一括で修正する必要があります。
+-- を実行し確認した結果、facilities.id は integer (int4) であることが判明した。
+-- そのため本ファイルは organization_members.facility_id / 関数引数を含め
+-- integer 型で統一している(旧版ではリポジトリから型を直接確認できず
+-- bigint と推測していたが、上記確認により integer に訂正済み)。
 
 -- 1. 法人(組織)テーブル
 create table if not exists public.organizations (
@@ -36,7 +32,7 @@ create table if not exists public.organization_members (
   organization_id  uuid not null references public.organizations(id) on delete cascade,
   user_id          uuid not null references auth.users(id) on delete cascade,
   role             text not null check (role in ('org_admin', 'facility_staff')),
-  facility_id      bigint references public.facilities(id) on delete cascade,
+  facility_id      integer references public.facilities(id) on delete cascade,
   created_at       timestamptz not null default now(),
 
   -- org_admin は facility_id を持たない(法人内全施設が対象)、

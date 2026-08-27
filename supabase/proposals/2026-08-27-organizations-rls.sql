@@ -6,6 +6,10 @@
 -- ゆうあ自身はRLSポリシーを作成・変更する権限(service_role等)を持たない。
 -- 代表がSupabaseダッシュボード(SQL Editor)で内容を確認の上、適用すること。
 --
+-- 型の確定について: 代表がSupabaseダッシュボードで確認した結果、facilities.id は
+-- integer (int4) であることが判明したため、本ファイルの is_authorized_for_facility
+-- 関数の引数型を integer で統一している(2026-08-27-organizations-schema.sqlと同様の訂正)。
+--
 -- 前提:
 --   1. 2026-08-27-organizations-schema.sql が適用済みであること
 --      (organizations / organization_members テーブル、facilities.organization_id列が存在すること)。
@@ -36,7 +40,7 @@
 -- ポリシー内からorganization_membersを参照するサブクエリ自体もRLS対象になり
 -- 得るため、関数側で定義者権限に昇格して素直に読めるようにする
 -- (Supabase公式が推奨するRLSヘルパー関数のパターン)。
-create or replace function public.is_authorized_for_facility(target_facility_id bigint)
+create or replace function public.is_authorized_for_facility(target_facility_id integer)
 returns boolean
 language sql
 security definer
@@ -55,7 +59,7 @@ as $$
   );
 $$;
 
-comment on function public.is_authorized_for_facility(bigint) is
+comment on function public.is_authorized_for_facility(integer) is
   '法人管理者(自法人内全施設)または施設スタッフ(自施設のみ)が指定施設にアクセス権限を持つか判定する。RLSポリシーから使用する。';
 
 -- ============================================================
