@@ -1,10 +1,6 @@
 import Link from 'next/link'
-import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 
-// 実装検証用の暫定ページ。正式なプライバシーポリシー本文の作成・確定は総務・法務部の
-// 別タスク(2026-08-24チェック結果の申し送り事項2)であり、このページの文言をもって
-// 正式なプライバシーポリシーとはしない。記載項目は総務・法務部あいかの
-// 同意取得フロー設計案(2026-08-26)2-3を基にした最小限のものである。
 export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-[#F3ECE0] text-gray-800 p-4 sm:p-8 font-sans">
@@ -17,15 +13,11 @@ export default function PrivacyPage() {
           戻る
         </Link>
 
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex items-start gap-2.5 text-xs text-amber-900 font-bold">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <span>
-            本ページは実装検証用の暫定版であり、総務・法務部による正式な文言確定前のものです。記載内容は今後変更される可能性があります。
-          </span>
-        </div>
-
         <div className="bg-[#FAF8F5] rounded-3xl border-2 border-[#D8CEBF] shadow-md p-6 sm:p-8 space-y-5 text-xs leading-relaxed text-gray-700">
-          <h1 className="text-xl font-black text-gray-900">プライバシーポリシー（暫定版）</h1>
+          <div className="space-y-1">
+            <h1 className="text-xl font-black text-gray-900">プライバシーポリシー</h1>
+            <p className="text-[11px] font-bold text-gray-400">最終更新日: 2026年8月28日</p>
+          </div>
 
           <section className="space-y-1.5">
             <h2 className="font-black text-gray-900 text-sm">1. 取得する個人情報と利用目的</h2>
@@ -57,13 +49,32 @@ export default function PrivacyPage() {
 
           <section className="space-y-1.5">
             <h2 className="font-black text-gray-900 text-sm">4. 保存期間</h2>
-            <p>保存期間の具体的な考え方は、総務・法務部による確定後に別途掲載します。</p>
+            <p>
+              運営会社は、取得した個人情報（要配慮個人情報を含みます）について、利用目的の達成に必要な範囲を超えて保有しないよう努めます（個人情報保護法22条）。具体的な保存の考え方は以下のとおりです。
+            </p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>
+                アカウント情報・お子様に関する情報（受給者証番号・支給決定サービス種別を含みます）、施設とのメッセージ本文: 保護者様のアカウントが存在し、施設検索・見学申込・施設とのメッセージのやり取りという利用目的が継続する限り保存します。アカウントの削除をお申し出いただいた場合は、法令に基づき保存が必要な場合を除き、アカウント削除後6ヶ月以内に削除又は個人を特定できない形式への加工（匿名化）を行います。
+              </li>
+              <li>
+                施設情報の変更履歴ログ（空き状況等の変更履歴）: 保護者様個人に関する情報ではなく施設運営データですが、監査対応・記録の正確性確保という目的の性質上、上記より長期の保存を想定しています。具体的な保存年数は、今後の運用状況を踏まえて確定し、確定次第本ポリシーを改定してお知らせします。
+              </li>
+              <li>法令の定めにより保存が義務付けられている情報は、当該法令の定める期間保存します。</li>
+            </ul>
+            <p>上記は本ポリシー作成時点（2026年8月）における運用方針です。</p>
           </section>
 
           <section className="space-y-1.5">
             <h2 className="font-black text-gray-900 text-sm">5. 開示・訂正・利用停止のご請求</h2>
             <p>
-              保有する個人情報の開示・訂正・利用停止等をご希望の場合の窓口については、総務・法務部による確定後に別途掲載します。
+              ご本人（お子様に関する情報については、法定代理人であるご本人の保護者様）は、運営会社が保有する個人データについて、個人情報保護法の定めるところにより、利用目的の通知、開示、内容の訂正・追加・削除、利用停止・消去、第三者提供の停止等をご請求いただけます。
+            </p>
+            <p>
+              ご請求をいただく場合は、下記の窓口までご連絡ください。運営会社にてご本人確認をさせていただいたうえで、法令に従い合理的な期間内に対応いたします。お子様に関する情報のご請求は、法定代理人（保護者）様からのご請求として受け付けます。
+            </p>
+            <p className="font-black text-gray-800">お問い合わせ窓口: 電話 070-2620-3064 / メール info@aluka.co.jp</p>
+            <p>
+              なお、ご請求の内容によっては、本サービスの一部機能（施設とのメッセージのやり取り等）がご利用いただけなくなる場合があります。
             </p>
           </section>
 
@@ -75,6 +86,28 @@ export default function PrivacyPage() {
               </Link>
               もあわせてご確認ください。
             </p>
+          </section>
+
+          <section className="space-y-1.5">
+            <h2 className="font-black text-gray-900 text-sm">7. 事業者情報</h2>
+            <dl className="space-y-1">
+              <div className="flex gap-2">
+                <dt className="font-black text-gray-800 shrink-0 w-40">運営会社</dt>
+                <dd>合同会社Aluka</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-black text-gray-800 shrink-0 w-40">所在地</dt>
+                <dd>大阪市浪速区稲荷2-7-1-606</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-black text-gray-800 shrink-0 w-40">代表者</dt>
+                <dd>森 康平</dd>
+              </div>
+              <div className="space-y-0.5">
+                <dt className="font-black text-gray-800">個人情報の取扱いに関するお問い合わせ窓口</dt>
+                <dd>電話 070-2620-3064 / メール info@aluka.co.jp</dd>
+              </div>
+            </dl>
           </section>
         </div>
       </div>
