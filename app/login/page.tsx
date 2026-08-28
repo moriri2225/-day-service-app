@@ -4,6 +4,7 @@ import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { recordConsent } from '@/lib/consent'
+import { checkPasswordPwned } from '@/lib/pwnedPasswordCheck'
 import { Mail, Lock, Loader2, ArrowLeft, Building2, Sparkles, Heart, Eye, EyeOff, Paperclip, HelpCircle, Send } from 'lucide-react'
 import Link from 'next/link'
 
@@ -65,6 +66,13 @@ function LoginFormContent() {
 
         if (password.length < 12) {
           throw new Error('パスワードは12文字以上で入力してください。')
+        }
+
+        const isPwned = await checkPasswordPwned(password)
+        if (isPwned) {
+          throw new Error(
+            'このパスワードは、過去に漏えいの記録があるものと一致しました。恐れ入りますが、別のパスワードをお試しください。'
+          )
         }
 
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({

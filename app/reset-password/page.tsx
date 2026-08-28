@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { checkPasswordPwned } from '@/lib/pwnedPasswordCheck'
 import { Lock, Loader2, Paperclip, Heart, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -35,6 +36,15 @@ function ResetPasswordContent() {
     setMessage(null)
 
     try {
+      const isPwned = await checkPasswordPwned(password)
+      if (isPwned) {
+        setMessage({
+          type: 'error',
+          text: 'このパスワードは、過去に漏えいの記録があるものと一致しました。恐れ入りますが、別のパスワードをお試しください。',
+        })
+        return
+      }
+
       const { error } = await supabase.auth.updateUser({
         password: password,
       })

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase'; // パスが合わない場合は調整してください
+import { checkPasswordPwned } from '@/lib/pwnedPasswordCheck';
 
 export default function Auth({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [email, setEmail] = useState('');
@@ -19,6 +20,14 @@ export default function Auth({ onLoginSuccess }: { onLoginSuccess: () => void })
       // 新規登録
       if (password.length < 12) {
         setMessage('エラー: パスワードは12文字以上で入力してください。');
+        setLoading(false);
+        return;
+      }
+      const isPwned = await checkPasswordPwned(password);
+      if (isPwned) {
+        setMessage(
+          'エラー: このパスワードは、過去に漏えいの記録があるものと一致しました。恐れ入りますが、別のパスワードをお試しください。'
+        );
         setLoading(false);
         return;
       }

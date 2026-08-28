@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
+import { checkPasswordPwned } from '@/lib/pwnedPasswordCheck'
 import { Mail, Lock, Loader2, ArrowLeft, Building2 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -75,6 +76,13 @@ function AdminLoginFormContent() {
 
       if (password.length < 12) {
         throw new Error('パスワードは12文字以上で入力してください。')
+      }
+
+      const isPwned = await checkPasswordPwned(password)
+      if (isPwned) {
+        throw new Error(
+          'このパスワードは、過去に漏えいの記録があるものと一致しました。恐れ入りますが、別のパスワードをお試しください。'
+        )
       }
 
       // 1. Supabase Authでユーザー作成
