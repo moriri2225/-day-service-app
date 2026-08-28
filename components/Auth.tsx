@@ -17,6 +17,11 @@ export default function Auth({ onLoginSuccess }: { onLoginSuccess: () => void })
 
     if (isSignUp) {
       // 新規登録
+      if (password.length < 12) {
+        setMessage('エラー: パスワードは12文字以上で入力してください。');
+        setLoading(false);
+        return;
+      }
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -67,7 +72,7 @@ export default function Auth({ onLoginSuccess }: { onLoginSuccess: () => void })
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full p-2 border rounded-md border-gray-300"
-            minLength={6}
+            minLength={12}
             required
           />
         </div>

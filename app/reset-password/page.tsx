@@ -26,6 +26,11 @@ function ResetPasswordContent() {
       return
     }
 
+    if (password.length < 12) {
+      setMessage({ type: 'error', text: 'パスワードは12文字以上で入力してください。' })
+      return
+    }
+
     setLoading(true)
     setMessage(null)
 
@@ -119,7 +124,7 @@ function ResetPasswordContent() {
             /* 新しいパスワード入力フォーム */
             <form className="space-y-4" onSubmit={handleUpdatePassword}>
               <p className="text-xs text-gray-600 font-medium leading-relaxed bg-[#FFFEEF] p-3 rounded-xl border border-[#E5DDD0]">
-                新しく使用するパスワードを6文字以上で入力してください。
+                新しく使用するパスワードを12文字以上で入力してください。
               </p>
 
               <div>
@@ -133,11 +138,11 @@ function ResetPasswordContent() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    minLength={6}
+                    minLength={12}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="block w-full pl-9 pr-10 py-2.5 bg-white border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-[#D96B85] transition-all"
-                    placeholder="6文字以上のパスワード"
+                    placeholder="12文字以上のパスワード"
                   />
                   <button
                     type="button"
@@ -160,7 +165,7 @@ function ResetPasswordContent() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    minLength={6}
+                    minLength={12}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     className="block w-full pl-9 pr-10 py-2.5 bg-white border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-[#D96B85] transition-all"

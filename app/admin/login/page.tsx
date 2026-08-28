@@ -73,6 +73,10 @@ function AdminLoginFormContent() {
         throw new Error('施設名を入力してください。')
       }
 
+      if (password.length < 12) {
+        throw new Error('パスワードは12文字以上で入力してください。')
+      }
+
       // 1. Supabase Authでユーザー作成
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -253,11 +257,11 @@ function AdminLoginFormContent() {
                 <input
                   type="password"
                   required
-                  minLength={6}
+                  minLength={12}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm"
-                  placeholder={isSignUp ? '6文字以上のパスワード' : '••••••••'}
+                  placeholder={isSignUp ? '12文字以上のパスワード' : '••••••••'}
                 />
               </div>
             </div>

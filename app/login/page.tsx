@@ -63,6 +63,10 @@ function LoginFormContent() {
           throw new Error('利用規約およびプライバシーポリシーへの同意が必要です。')
         }
 
+        if (password.length < 12) {
+          throw new Error('パスワードは12文字以上で入力してください。')
+        }
+
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -330,11 +334,11 @@ function LoginFormContent() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
-                    minLength={6}
+                    minLength={12}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="block w-full pl-9 pr-10 py-2.5 bg-white border-2 border-[#E5DDD0] rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-[#D96B85] transition-all"
-                    placeholder="6文字以上のパスワード"
+                    placeholder="12文字以上のパスワード"
                   />
                   <button
                     type="button"
