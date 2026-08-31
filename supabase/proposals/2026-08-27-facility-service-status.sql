@@ -2,6 +2,11 @@
 -- (訪問系・相談支援系は「事業所情報+問い合わせ」のみのシンプル仕様に変更。詳細は
 --  outputs/kakehashi-project/2026-08-27-visit-consultation-simplify-yua.md を参照)
 --
+-- 追記(2026-09-01): 代表決定によりサービス種別「in_home_developmental_support」
+-- (居宅訪問型児童発達支援)自体を廃止した(lib/serviceTypes.ts等から削除済み)。
+-- 本ファイルは元々未適用のため追加対応は不要だが、万一将来これを参考に適用する場合は
+-- 下記check制約から'in_home_developmental_support'を除外すること。
+--
 -- 提案SQL: 訪問系2種別・相談支援系1種別の対応状況テーブル新設
 -- 起票: PRD開発部 ゆうあ / 2026-08-27
 -- 元設計: outputs/kakehashi-project/2026-08-27-ux-design-4-3-honoka.md 3〜5章

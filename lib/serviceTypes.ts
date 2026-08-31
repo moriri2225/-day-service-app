@@ -1,4 +1,4 @@
-// サービス種別5種の定義とグループ分け（通所/訪問/相談支援）。
+// サービス種別4種の定義とグループ分け（通所/訪問/相談支援）。
 // 検索画面・施設詳細ページ・管理画面の3箇所で同じ区分・表記・配色を使うための共通定義。
 // 参照元設計: outputs/kakehashi-project/2026-08-27-ux-design-4-3-honoka.md 0章
 //
@@ -37,13 +37,6 @@ export const SERVICE_TYPES: ServiceTypeDef[] = [
     colorClass: 'bg-[#EEF2FB] text-[#4A72C9] border-[#C7D5F0]',
   },
   {
-    id: 'in_home_developmental_support',
-    label: '居宅訪問型児童発達支援',
-    shortLabel: '訪問（居宅）',
-    group: 'visit',
-    colorClass: 'bg-[#EEF2FB] text-[#4A72C9] border-[#C7D5F0]',
-  },
-  {
     id: 'consultation_support',
     label: '障害児相談支援',
     shortLabel: '相談支援',
@@ -67,7 +60,6 @@ export const GROUP_OPTGROUP_LABEL: Record<ServiceGroup, string> = {
 // フィルタの(?)アイコンで出す一言解説（通所系は既存UIで名称から用途が明らかなため用意しない）
 export const SERVICE_DESCRIPTION: Partial<Record<string, string>> = {
   home_visit_support: '支援員が、お子さまが通う保育所や学校などを訪問して支援するサービスです',
-  in_home_developmental_support: '支援員が、ご自宅を訪問して支援するサービスです',
   consultation_support: '日々の支援そのものではなく、お子さまに合った支援の利用計画を一緒に考えるご相談窓口です',
 };
 
